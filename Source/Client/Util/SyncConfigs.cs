@@ -91,7 +91,9 @@ public static class SyncConfigs
         // Special case for HugsLib
         if (modIds.Contains(HugsLibId) && JoinData.GetInstalledMod(HugsLibId) is { Active: true })
         {
-            var hugsConfig = HugsLib_OverrideConfigsPatch.HugsLibConfigIsOverriden
+            // Read the file HugsLib really loaded: its override prefix only applies when Applicable, so a leftover temp
+            // copy from an earlier Fix-and-restart must not be compared (or sent by a host) in a normal session
+            var hugsConfig = Applicable && HugsLib_OverrideConfigsPatch.HugsLibConfigIsOverriden
                 ? HugsLib_OverrideConfigsPatch.HugsLibConfigOverridePath
                 : Path.Combine(GenFilePaths.SaveDataFolderPath, "HugsLib", "ModSettings.xml");
 

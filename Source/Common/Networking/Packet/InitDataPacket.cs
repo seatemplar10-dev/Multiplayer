@@ -63,7 +63,10 @@ public record struct ClientInitDataPacket : IPacket
         public ulong publishedFileId;
         public ModSource source;
         public List<ModFile> files;
-        public ModConfig? config;
+        // Every settings file of the mod: one per Verse.Mod subclass with settings (RJW has five), plus HugsLib's
+        // ModSettings for HugsLib. A single optional config dropped all but the first, so a joiner with the same
+        // files always saw "Configs match: False" and Fix-and-restart applied only one of them.
+        public List<ModConfig> configs;
 
         public void Bind(PacketBuffer buf)
         {
@@ -72,33 +75,9 @@ public record struct ClientInitDataPacket : IPacket
             buf.Bind(ref publishedFileId);
             buf.BindEnum(ref source);
             buf.Bind(ref files, BinderOf.Identity<ModFile>());
-            buf.BindWith(ref config, ConfigBinder);
+            if (buf.isWriting) configs ??= [];
+            buf.Bind(ref configs, BinderOf.Identity<ModConfig>());
         }
-
-        private static readonly Binder<ModConfig?> ConfigBinder = (PacketBuffer buf, ref ModConfig? modConfig) =>
-        {
-            if (buf.isWriting)
-            {
-                var present = modConfig.HasValue;
-                buf.Bind(ref present);
-                if (present)
-                {
-                    ModConfig config = modConfig.Value;
-                    buf.Bind(ref config);
-                }
-            }
-            else
-            {
-                var present = false;
-                buf.Bind(ref present);
-                if (present)
-                {
-                    ModConfig config = new();
-                    buf.Bind(ref config);
-                    modConfig = config;
-                }
-            }
-        };
 
         public static Binder<List<ModData>> ListBinder =>
             BinderOf.List(BinderOf.Identity<ModData>()).Gzipped(MaxRawDataLength);

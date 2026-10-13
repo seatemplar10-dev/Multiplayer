@@ -193,8 +193,22 @@ public class PacketTest
             name = "Multiplayer",
             packageIdNonUnique = "rwmt.multiplayer",
             source = ClientInitDataPacket.ModSource.SteamWorkshop,
-            config = null,
+            configs = [],
             files = [],
+            publishedFileId = 0,
+        };
+        // A mod with several Verse.Mod settings classes (RJW has five): every config must survive the round trip
+        var multiConfigModData = new ClientInitDataPacket.ModData
+        {
+            name = "Multi Settings Mod",
+            packageIdNonUnique = "test.multisettings",
+            source = ClientInitDataPacket.ModSource.ModsFolder,
+            configs =
+            [
+                new ClientInitDataPacket.ModConfig { fileName = "SettingsControllerA", contents = "<a/>" },
+                new ClientInitDataPacket.ModConfig { fileName = "SettingsControllerB", contents = "<b/>" }
+            ],
+            files = [new ClientInitDataPacket.ModFile { path = "Assemblies/Multi.dll", hash = 42 }],
             publishedFileId = 0,
         };
         yield return new ServerJoinDataPacket
@@ -231,7 +245,7 @@ public class PacketTest
                 new KeyedDefInfo { name = "key", count = 1, hash = 123 },
                 new KeyedDefInfo { name = "key2", count = 0, hash = 0 }
             ],
-            Mods = [mpModData],
+            Mods = [mpModData, multiConfigModData],
         };
 
         // real code is using GZip compressed content for the traces, but we are only testing on the wire representation
@@ -261,6 +275,26 @@ public class PacketTest
         typeof(ClientInitDataPacket),
         typeof(ServerJoinDataPacket)
     ];
+
+    // TestRoundtrip cannot catch a Bind that drops configs: ClientInitDataPacket.Mods serializes in its setter, so
+    // "original" already holds the serialized form. Compare against the source list instead.
+    [Test]
+    public void InitDataKeepsEveryModConfig()
+    {
+        List<ClientInitDataPacket.ModConfig> configs =
+        [
+            new() { fileName = "RJWSettingsController", contents = "<a/>" },
+            new() { fileName = "RJWDebugController", contents = "<b/>" },
+            new() { fileName = "RJWPregnancySettingsController", contents = "<c/>" }
+        ];
+        var packet = new ClientInitDataPacket
+        {
+            rwVersion = "1.7", debugOnlySyncCmds = [], hostOnlySyncCmds = [], defInfos = [],
+            Mods = [new ClientInitDataPacket.ModData { packageIdNonUnique = "rim.job.world", name = "RJW", files = [], configs = configs }]
+        };
+
+        packet.Mods.Single().configs.Should().BeEquivalentTo(configs, opts => opts.WithStrictOrdering());
+    }
 
     [TestCaseSource(nameof(RoundtripPackets))]
     public void TestRoundtrip(IPacket original)

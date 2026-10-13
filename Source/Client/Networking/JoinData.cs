@@ -36,7 +36,15 @@ namespace Multiplayer.Client
                     })
                     .ToList();
 
-                var localConfig = configs.FirstOrDefault(localConfig => localConfig.ModId == meta.PackageIdNonUnique);
+                // All of the mod's configs, not the first: the joiner compares the full set (CompareToLocal)
+                var modConfigs = configs
+                    .Where(localConfig => localConfig.ModId == meta.PackageIdNonUnique)
+                    .Select(localConfig => new ClientInitDataPacket.ModConfig
+                    {
+                        fileName = localConfig.FileName,
+                        contents = localConfig.Contents,
+                    })
+                    .ToList();
                 var source = meta.Source switch
                 {
                     ContentSource.Undefined => ClientInitDataPacket.ModSource.Undefined,
@@ -53,13 +61,7 @@ namespace Multiplayer.Client
                     publishedFileId = (ulong)meta.GetPublishedFileId(),
                     source = source,
                     files = files,
-                    config = localConfig == null
-                        ? null
-                        : new ClientInitDataPacket.ModConfig
-                        {
-                            fileName = localConfig.FileName,
-                            contents = localConfig.Contents,
-                        }
+                    configs = modConfigs
                 };
             }).ToList();
         }
@@ -234,12 +236,10 @@ namespace Multiplayer.Client
                     remoteInfo.remoteFiles.Add(modInfo.packageId, new ModFile(absPath, modFile.path, modFile.hash));
                 }
 
-                if (mod.config.HasValue)
-                {
-                    var modConfig = mod.config.Value;
-                    remoteInfo.remoteModConfigs.Add(
-                        new ModConfig(modInfo.packageId, modConfig.fileName, modConfig.contents));
-                }
+                if (mod.configs != null)
+                    foreach (var modConfig in mod.configs)
+                        remoteInfo.remoteModConfigs.Add(
+                            new ModConfig(modInfo.packageId, modConfig.fileName, modConfig.contents));
             }
 
             return remoteInfo;
