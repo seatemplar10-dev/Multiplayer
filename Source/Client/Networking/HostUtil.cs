@@ -220,36 +220,19 @@ namespace Multiplayer.Client
             if (arbiterNet == null) throw new Exception("Failed to setup Arbiter network.");
             Multiplayer.LocalServer.netManagers.Add(arbiterNet);
 
-            string args = $"-batchmode -nographics -arbiter -logfile arbiter_log.txt -connect=127.0.0.1:{arbiterNet.Port}";
-
-            if (GenCommandLine.TryGetCommandLineArg("savedatafolder", out string saveDataFolder))
-                args += $" \"-savedatafolder={saveDataFolder}\"";
-
-            string arbiterInstancePath;
-            if (Application.platform == RuntimePlatform.OSXPlayer)
-            {
-                arbiterInstancePath = Application.dataPath + "/MacOS/" + Process.GetCurrentProcess().MainModule!.ModuleName;
-            }
-            else
-            {
-                arbiterInstancePath = Process.GetCurrentProcess().MainModule!.FileName;
-            }
-
+            // Launch, log capture and the arbiter's own save data: ArbiterLauncher
             try
             {
-                Multiplayer.session.arbiter = Process.Start(
-                    arbiterInstancePath,
-                    args
-                );
+                Multiplayer.session.arbiter = ArbiterLauncher.Start(arbiterNet.Port);
             }
             catch (Exception ex)
             {
                 Multiplayer.session.AddMsg("Arbiter failed to start.", false);
                 Log.Error("Arbiter failed to start.");
                 Log.Error(ex.ToString());
-                if (ex.InnerException is Win32Exception)
+                if ((ex as Win32Exception ?? ex.InnerException as Win32Exception) is { } win32)
                 {
-                    Log.Error("Win32 Error Code: " + ((Win32Exception)ex).NativeErrorCode);
+                    Log.Error("Win32 Error Code: " + win32.NativeErrorCode);
                 }
             }
         }

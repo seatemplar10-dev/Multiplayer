@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -128,6 +129,9 @@ namespace Multiplayer.Client
 
         private static string GetLogFileContents()
         {
+            if (!Native.IsMono)
+                return GetInMemoryLog();
+
             var filePath = TryGetLogFilePath();
             if (filePath.NullOrEmpty() || !File.Exists(filePath))
             {
@@ -142,6 +146,31 @@ namespace Multiplayer.Client
             File.Delete(tempPath);
 
             return fileContents;
+        }
+
+        // RimWorld 1.7 (Waylith) has no Unity Player.log. Its file log is <persistent data>\Logs\Player.log, outside
+        // -savedatafolder: one file for every instance on the machine (missing with -NoFileLog), started by whichever
+        // instance came last. The game's in-memory log belongs to this process, so the report uses that: the most
+        // recent messages, oldest first, stack traces for warnings and errors, within the line limit.
+        private static string GetInMemoryLog()
+        {
+            const int lineBudget = MaxLogLineCount - 100;
+            var messages = Log.Messages.ToList();
+            var blocks = new List<string>();
+            int lines = 0;
+
+            for (int i = messages.Count - 1; i >= 0 && lines < lineBudget; i--)
+            {
+                var msg = messages[i];
+                var block = msg.ToString();
+                if (msg.type != LogMessageType.Message && !msg.StackTrace.NullOrEmpty())
+                    block += "\n" + msg.StackTrace.TrimEnd();
+                lines += block.Count(c => c == '\n') + 1;
+                blocks.Add(block);
+            }
+
+            blocks.Reverse();
+            return $"In-memory game log ({blocks.Count} of {messages.Count} messages)\n" + string.Join("\n", blocks) + "\n";
         }
 
         private static string RedactString(string original, string redactStart, string redactEnd, string replacement)

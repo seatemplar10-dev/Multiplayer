@@ -81,6 +81,38 @@ namespace Multiplayer.Client
                 (!remote.hasConfigs || remote.remoteModConfigs.EqualAsSets(SyncConfigs.GetSyncableConfigContents(remote.RemoteModIds.ToList())));
         }
 
+        // The parts of CompareToLocal that fail, for the log
+        internal static string DescribeDifferences(RemoteData remote)
+        {
+            var parts = new List<string>();
+
+            if (remote.remoteRwVersion != VersionControl.CurrentVersionString)
+                parts.Add($"RimWorld version {remote.remoteRwVersion} vs local {VersionControl.CurrentVersionString}");
+
+            var modDiff = remote.CompareMods(activeModsSnapshot);
+            if (modDiff != ModListDiff.None)
+                parts.Add($"mod list: {modDiff}");
+
+            if (!remote.remoteFiles.DictsEqual(modFilesSnapshot))
+                parts.Add("mod files differ");
+
+            if (remote.hasConfigs)
+            {
+                var local = SyncConfigs.GetSyncableConfigContents(remote.RemoteModIds.ToList());
+                if (!remote.remoteModConfigs.EqualAsSets(local))
+                {
+                    static string Name(ModConfig c) => $"{c.ModId}/{c.FileName} ({c.Contents?.Length ?? 0} chars)";
+                    var remoteSet = remote.remoteModConfigs.ToHashSet();
+                    var localSet = local.ToHashSet();
+                    parts.Add($"configs: remote {remote.remoteModConfigs.Count} ({remoteSet.Count} distinct), local {local.Count} " +
+                              $"({localSet.Count} distinct); only remote: [{remoteSet.Except(localSet).Take(10).Join(Name, ", ")}]; " +
+                              $"only local: [{localSet.Except(remoteSet).Take(10).Join(Name, ", ")}]");
+                }
+            }
+
+            return parts.Count == 0 ? "no difference found" : string.Join("; ", parts);
+        }
+
         internal static void TakeModDataSnapshot()
         {
             activeModsSnapshot = ModsConfig.ActiveModsInLoadOrder.ToList();

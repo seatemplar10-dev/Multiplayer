@@ -12,6 +12,10 @@ namespace Multiplayer.Client
     [HarmonyPatch]
     static class GUISkinArbiter_Patch
     {
+        // Unity's -nographics left GUI.skin unusable. RimWorld 1.7's GUI.skin is a plain static field that works in
+        // -headless, and a fresh GUISkin per call would build its styles every time.
+        static bool Prepare() => Native.IsMono;
+
         static MethodBase TargetMethod()
         {
             return AccessTools.PropertyGetter(typeof(GUI), nameof(GUI.skin));

@@ -46,7 +46,9 @@ public class ServerJoiningState : AsyncConnectionState
             Player.Disconnect(MpDisconnectReason.Protocol, ByteWriter.GetBytes(MpVersion.Version, MpVersion.Protocol));
         else
         {
-            Player.SendPacket(new ServerProtocolOkPacket(Server.settings.hasPassword, Server.IsStandaloneServer)
+            // The arbiter is never asked: it is headless (nobody to type a password) and connects only through the
+            // host's loopback arbiter listener (LiteNetArbiterManager)
+            Player.SendPacket(new ServerProtocolOkPacket(Server.settings.hasPassword && !Player.IsArbiter, Server.IsStandaloneServer)
             {
                 autosaveInterval = Server.settings.autosaveInterval,
                 autosaveUnit = Server.settings.autosaveUnit
@@ -63,7 +65,7 @@ public class ServerJoiningState : AsyncConnectionState
 
     private void HandleUsername(ClientUsernamePacket packet)
     {
-        if (Server.settings.hasPassword)
+        if (Server.settings.hasPassword && !Player.IsArbiter)
         {
             string? password = packet.password;
             if (password != Server.settings.password)

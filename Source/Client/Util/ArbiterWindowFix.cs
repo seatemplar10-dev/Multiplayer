@@ -20,6 +20,11 @@ namespace Multiplayer.Client
                 return;
             }
 
+            // Hides Unity's batch mode window; RimWorld 1.7's -headless creates no window at all
+            if (!Native.IsMono) {
+                return;
+            }
+
             SetParent(FindWindowA(LpBatchModeClassName, LpWindowName).ToInt32(), -3);
         }
     }

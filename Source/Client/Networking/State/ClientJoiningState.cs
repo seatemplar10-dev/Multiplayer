@@ -110,6 +110,19 @@ namespace Multiplayer.Client
                     return;
                 }
 
+                // Nobody can click "Connect anyway" on the headless arbiter. It runs the host's own install with a
+                // copy of the host's configs, so go on unless the defs differ, and log what was reported as different.
+                if (Multiplayer.arbiterInstance && !defDiff)
+                {
+                    Log.Warning($"Multiplayer: arbiter join data differs from the host's ({JoinData.DescribeDifferences(remoteInfo)}); connecting anyway");
+                    StartDownloading();
+                    return;
+                }
+
+                if (defDiff && Multiplayer.arbiterInstance)
+                    Log.Error("Multiplayer: arbiter defs differ from the host's, the arbiter quits: " + MultiplayerData.localDefInfos
+                        .Where(kv => defStatusMap[kv.Value] != DefCheckStatus.Ok).Take(10).Join(kv => $"{kv.Key}: {defStatusMap[kv.Value]}", ", "));
+
                 if (defDiff)
                     Multiplayer.StopMultiplayerAndClearAllWindows();
 

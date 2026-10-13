@@ -11,6 +11,7 @@ namespace Multiplayer.Client
     public static class ConstantTicker
     {
         public static bool ticking;
+        private static int arbiterOpinionsSent;
 
         public static void Tick()
         {
@@ -120,8 +121,16 @@ namespace Multiplayer.Client
                 try
                 {
                     if (!TickPatch.Simulating && (Multiplayer.LocalServer != null || Multiplayer.arbiterInstance))
+                    {
                         Multiplayer.Client.SendFragmented(
                             new ClientSyncInfoPacket { SyncOpinion = opinion.ToNet() }.Serialize());
+
+                        // The arbiter has no window: a line now and then shows in its log that it ticks
+                        if (Multiplayer.arbiterInstance && ++arbiterOpinionsSent % 100 == 1)
+                            Log.Message($"Multiplayer: arbiter sent sync opinion {arbiterOpinionsSent} " +
+                                        $"(start tick {opinion.startTick}, timer {TickPatch.Timer}, " +
+                                        $"{opinion.desyncStackTraceHashes.Count} trace hashes)");
+                    }
                 }
                 catch (Exception e)
                 {

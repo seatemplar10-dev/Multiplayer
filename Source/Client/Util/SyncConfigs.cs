@@ -14,7 +14,7 @@ namespace Multiplayer.Client.Util;
 public static class SyncConfigs
 {
     private static readonly string TempConfigsPath = GenFilePaths.FolderUnderSaveData("MultiplayerTempConfigs");
-    private const string RestartConfigsVariable = "MultiplayerRestartConfigs";
+    internal const string RestartConfigsVariable = "MultiplayerRestartConfigs";
 
     public static bool Applicable { private set; get; }
 

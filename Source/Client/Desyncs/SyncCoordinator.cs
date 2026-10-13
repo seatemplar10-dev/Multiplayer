@@ -28,6 +28,7 @@ namespace Multiplayer.Client
 
         public int lastValidTick = -1;
         public bool arbiterWasPlayingOnLastValidTick;
+        private int checksPassed;
 
         private const int MaxBacklog = 30;
 
@@ -101,6 +102,17 @@ namespace Multiplayer.Client
                 // Update fields
                 lastValidTick = oldOpinion.startTick;
                 arbiterWasPlayingOnLastValidTick = Multiplayer.session.ArbiterPlaying;
+
+                // A line now and then, so a soak's log shows the checks run and carry traces
+                checksPassed++;
+                if (checksPassed == 1 || checksPassed % 100 == 0)
+                {
+                    var localOpinion = oldOpinion.isLocalClientsOpinion ? oldOpinion : newOpinion;
+                    var remoteOpinion = oldOpinion.isLocalClientsOpinion ? newOpinion : oldOpinion;
+                    Log.Message($"Multiplayer: sync check {checksPassed} passed (opinion start tick {oldOpinion.startTick}, " +
+                                $"trace hashes local {localOpinion.desyncStackTraceHashes.Count} / remote " +
+                                $"{remoteOpinion.desyncStackTraceHashes.Count}, arbiter playing {Multiplayer.session.ArbiterPlaying})");
+                }
 
                 // Return inner data to the pool
                 oldOpinion.Clear();
@@ -212,7 +224,7 @@ namespace Multiplayer.Client
             OpinionInBuilding.desyncStackTraceHashes.Add(hash);
         }
 
-        public void TryAddStackTraceForDesyncLogRaw(StackTraceLogItemRaw item, int depth, int hashIn, string moreInfo = null)
+        public void TryAddStackTraceForDesyncLogRaw(StackTraceLogItemRaw item, int depth, int hashIn, string moreInfo = null, bool hashDepth = true)
         {
             if (!ShouldCollect) return;
 
@@ -232,7 +244,9 @@ namespace Multiplayer.Client
                 item.thingId = thing.thingIDNumber;
             }
 
-            var hash = Gen.HashCombineInt(hashIn, depth, (int)(item.rngState >> 32), (int)item.rngState);
+            var hash = hashDepth
+                ? Gen.HashCombineInt(hashIn, depth, (int)(item.rngState >> 32), (int)item.rngState)
+                : Gen.HashCombineInt(Gen.HashCombineInt(hashIn, (int)(item.rngState >> 32)), (int)item.rngState);
             item.hash = hash;
 
             OpinionInBuilding.desyncStackTraces.Add(item);

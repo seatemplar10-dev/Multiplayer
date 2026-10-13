@@ -34,10 +34,13 @@ namespace Multiplayer.Client.Desyncs
         {
             if (Native.LmfPtr == 0)
             {
-                // CoreCLR (RimWorld 1.7) has no Mono LMF to walk. A managed StackTrace is far too slow for every Rand
-                // call, so there it only runs in the Slow tracing mode.
-                if (!Native.IsMono && Multiplayer.settings?.desyncTracingMode == DesyncTracingMode.Slow &&
-                    ShouldAddStackTraceForDesyncLog())
+                // CoreCLR (RimWorld 1.7) has no Mono LMF to walk, so Fast has nothing of its own to record there.
+                // Fast and Slow both record managed traces (the default setting is Fast, and the arbiter gets no
+                // settings edit); None stays off (checked in ShouldAddStackTraceForDesyncLog).
+                // Cost: a System.Diagnostics.StackTrace per traced call (each Rand.Value/Rand.Int, thing spawn and
+                // despawn, unique id while ticking), microseconds each instead of the Mono walk's fraction of one, so
+                // busy maps tick noticeably slower with traces on. Set None to measure without them.
+                if (!Native.IsMono && ShouldAddStackTraceForDesyncLog())
                     ManagedTrace();
                 return;
             }
@@ -57,6 +60,15 @@ namespace Multiplayer.Client.Desyncs
 
         private static Dictionary<MethodBase, int> managedNameHashes = new();
 
+        public const string TraceFrameHashArg = "mptraceframehash";
+
+        // On CoreCLR the frames of one call path can differ between two games that are in sync: tiered compilation
+        // and dynamic PGO decide inlining at run time, on timing, so a method can be a frame in one process and be
+        // inlined away in another. Hashing the frames would then report "Trace hashes don't match" with no real
+        // desync. By default the managed trace hash is the random state alone; the frames are still recorded for
+        // the desync report. The -mptraceframehash switch hashes the frames too (the arbiter gets it from the host).
+        public static readonly bool HashManagedFrames = GenCommandLine.CommandLineArgPassed(TraceFrameHashArg);
+
         private static void ManagedTrace()
         {
             var logItem = StackTraceLogItemManaged.GetFromPool();
@@ -64,16 +76,18 @@ namespace Multiplayer.Client.Desyncs
             var frames = new StackTrace(2, false).GetFrames();
             int hash = 0;
             int depth = 0;
+            bool hashFrames = HashManagedFrames;
 
             foreach (var frame in frames)
             {
                 if (depth == StackTraceLogItemRaw.MaxDepth) break;
 
-                // Harmony's replacement for a patched method shows as a dynamic method; name it by the original
+                // Harmony's replacement for a patched method shows as a dynamic method; on CoreCLR Harmony maps it
+                // back to the original
                 var method = Harmony.GetMethodFromStackframe(frame);
                 logItem.methods[depth++] = method;
 
-                if (method == null)
+                if (method == null || !hashFrames)
                     continue;
 
                 if (!managedNameHashes.TryGetValue(method, out int nameHash))
@@ -82,7 +96,8 @@ namespace Multiplayer.Client.Desyncs
                 hash = Gen.HashCombineInt(hash, nameHash);
             }
 
-            Multiplayer.game.sync.TryAddStackTraceForDesyncLogRaw(logItem, depth, hash);
+            // The depth varies with inlining like the frames do
+            Multiplayer.game.sync.TryAddStackTraceForDesyncLogRaw(logItem, depth, hash, hashDepth: hashFrames);
         }
 
         public static bool ShouldAddStackTraceForDesyncLog()

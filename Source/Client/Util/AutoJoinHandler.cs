@@ -8,7 +8,7 @@ public static class AutoJoinHandler
     // Start the game with this argument passed (and a connector string afterward) to automatically join the specified
     // server during startup.
     public const string AutoJoinCommandLineArgName = "connect";
-    private const string RestartConnectVariable = "MultiplayerRestartConnect";
+    internal const string RestartConnectVariable = "MultiplayerRestartConnect";
 
     private static bool GetConnectionStringFromEnv(out string connString)
     {
