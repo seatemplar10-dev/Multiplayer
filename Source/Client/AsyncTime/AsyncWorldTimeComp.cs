@@ -153,19 +153,30 @@ public class AsyncWorldTimeComp : IExposable, ITickable
             foreach (var map in Find.Maps)
                 map.MpComp().SetFaction(Multiplayer.WorldComp.spectatorFaction);
         }
+
+        // Last: Tick() calls PreContext outside its try, so pin only once everything above has run
+        WorldCurrentMapPin.Pin();
     }
 
     public void PostContext()
     {
-        if (Multiplayer.GameComp.multifaction)
+        try
         {
-            var f = FactionExtensions.PopFaction();
-            foreach (var map in Find.Maps)
-                map.MpComp().SetFaction(f);
-        }
+            if (Multiplayer.GameComp.multifaction)
+            {
+                var f = FactionExtensions.PopFaction();
+                foreach (var map in Find.Maps)
+                    map.MpComp().SetFaction(f);
+            }
 
-        randState = Rand.StateCompressed;
-        Rand.PopState();
+            randState = Rand.StateCompressed;
+            Rand.PopState();
+        }
+        finally
+        {
+            // After the world's random state is popped: restoring a removed view runs UI code
+            WorldCurrentMapPin.Unpin();
+        }
     }
 
     public void ExecuteCmd(ScheduledCommand cmd)
