@@ -64,17 +64,14 @@ namespace Multiplayer.Client
 
             SetThingMakerSeed(1);
 
-            foreach (var field in typeof(DebugSettings).GetFields(BindingFlags.Public | BindingFlags.Static))
-                if (!field.IsLiteral && field.FieldType == typeof(bool))
-                    field.SetValue(null, default(bool));
-
-            typeof(DebugSettings).TypeInitializer.Invoke(null, null);
+            // DebugSettings and SymbolResolver_SingleThing.tmpRotations back to their initial values. This used to re-run
+            // their type initializers through TypeInitializer.Invoke, which CoreCLR (1.7) does not do: every DebugSettings
+            // bool stayed false. The values are captured when the mod is constructed (Multiplayer.InitMultiplayer).
+            StaticDefaults.Restore(msg => Log.Message(msg), msg => Log.Warning(msg));
 
             foreach (var resolver in DefDatabase<RuleDef>.AllDefs.SelectMany(r => r.resolvers))
                 if (resolver is SymbolResolver_EdgeThing edgeThing)
                     edgeThing.randomRotations = new List<int>() { 0, 1, 2, 3 };
-
-            typeof(SymbolResolver_SingleThing).TypeInitializer.Invoke(null, null);
 
             FactionCreator.ClearData();
         }

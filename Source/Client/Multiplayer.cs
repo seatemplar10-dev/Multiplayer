@@ -87,6 +87,9 @@ namespace Multiplayer.Client
 
         public static void InitMultiplayer(ModContentPack content)
         {
+            // First: the initial values MultiplayerGame restores for every session, before anything can change them
+            StaticDefaults.Capture(msg => Log.Message(msg), msg => Log.Warning(msg));
+
 #if EDIT_COMPILE_RELOAD
             EcrLog.messageCallback = Log.Message;
             EcrLog.errorCallback = Log.Error;
