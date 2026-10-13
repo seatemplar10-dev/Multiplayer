@@ -22,11 +22,27 @@ namespace Multiplayer.Client.Networking
         public const string PrevLogFileName = "arbiter_log.prev.txt";
         public const string SaveDataFolderName = "MpArbiter";
 
-        // Copied from the host's save data before every start; they decide the mod list and the mod settings.
         // The arbiter has its own save data folder because the game writes there on its own: mod settings,
         // Knowledge.xml and KeyPrefs.xml at startup, and a core-only ModsConfig.xml after any exception while loading
         // play data. In a folder shared with the host, that would rewrite the host's files.
-        private static readonly string[] MirroredFolders = ["Config", "HugsLib", "MultiplayerTempConfigs"];
+        // Before every start, every top-level folder of the host's save data is mirrored into it, except the ones
+        // below: Config (mod list, mod settings) is not the only place mods keep state that changes the game. Some
+        // keep their settings in a folder of their own (Missile Girl: MissileGirl\Mod_*.xml), others data that map
+        // generation reads (RealRuins: blueprints), and Multiplayer's def check compares def names, not values, so
+        // a difference there would only show up as a desync.
+        // Not mirrored: saves, Multiplayer's own output, the engine's caches (rebuilt per machine and GPU) and this
+        // folder itself.
+        private static readonly HashSet<string> SkippedFolders = new(PathComparer)
+        {
+            "Saves", "MpReplays", "MpDesyncs", SaveDataFolderName,
+            "BundleCache", "ShaderCache", "TextureCache", "HardwareProfile", "Logs"
+        };
+
+        // Folders with these names are skipped at any depth inside a mirrored folder, in the host's copy and in the
+        // arbiter's: caches a mod rebuilds from the mod files, and its own logs and reports. Missile Girl's Cache
+        // holds ~300 MB of unified def XML that the host rewrites at its own start; the arbiter has the same mod
+        // files and builds its own.
+        private static readonly HashSet<string> SkippedSubfolders = new(PathComparer) { "Cache", "Logs", "Reports" };
 
         private static Process lastStarted;
         private static bool exitHookAdded;
@@ -116,6 +132,10 @@ namespace Multiplayer.Client.Networking
             psi.ArgumentList.Add("-arbiter");
             psi.ArgumentList.Add($"-{AutoJoinHandler.AutoJoinCommandLineArgName}=127.0.0.1:{port}");
             psi.ArgumentList.Add($"-savedatafolder={saveData}");
+            // The arbiter traces like the host: the tracing mode is not in the settings file (it is set per run with
+            // -mptracemode or by a lab harness), and the trace hashes only compare when both sides hash the same way
+            if (Multiplayer.settings != null)
+                psi.ArgumentList.Add($"-{DeferredStackTracing.TraceModeArg}={Multiplayer.settings.desyncTracingMode}");
             if (DeferredStackTracing.HashManagedFrames)
                 psi.ArgumentList.Add("-" + DeferredStackTracing.TraceFrameHashArg);
 
@@ -135,37 +155,77 @@ namespace Multiplayer.Client.Networking
 
         private static string Quote(string arg) => arg.Contains(' ') ? $"\"{arg}\"" : arg;
 
-        // <host save data>\MpArbiter, with the mirrored folders made equal to the host's. Caches the engine keeps
-        // under the save data folder (BundleCache, ShaderCache, TextureCache) stay between runs.
+        // <host save data>\MpArbiter, with the mirrored folders made equal to the host's. The engine caches the arbiter
+        // builds in its own folder (BundleCache, ShaderCache, TextureCache) stay between runs. A first start copies
+        // everything (RealRuins alone can be ~350 MB); later starts copy only what changed.
         private static string PrepareSaveData(string hostSaveData)
         {
             string dir = Path.Combine(hostSaveData, SaveDataFolderName);
             Directory.CreateDirectory(dir);
 
+            var watch = Stopwatch.StartNew();
             int copied = 0, removed = 0, failed = 0;
-            foreach (var name in MirroredFolders)
-                MirrorFolder(Path.Combine(hostSaveData, name), Path.Combine(dir, name), ref copied, ref removed, ref failed);
+            long bytes = 0;
+            var mirrored = new List<string>();
+            // The arbiter's folders too: one the host no longer has is emptied (stale settings or server configs)
+            var names = Directory.GetDirectories(hostSaveData).Concat(Directory.GetDirectories(dir))
+                .Select(d => Path.GetFileName(d)).Distinct(PathComparer).OrderBy(n => n, PathComparer).ToList();
+            foreach (var name in names)
+            {
+                if (SkippedFolders.Contains(name)) continue;
+                var folder = Path.Combine(hostSaveData, name);
+                mirrored.Add(name);
+                try
+                {
+                    MirrorFolder(folder, Path.Combine(dir, name), ref copied, ref removed, ref failed, ref bytes);
+                }
+                catch (Exception e)
+                {
+                    // A folder that cannot be listed: the arbiter still starts, with what was copied
+                    failed++;
+                    Log.Warning($"Multiplayer: arbiter save data: could not mirror {folder}: {e.Message}");
+                }
+            }
 
-            Log.Message($"Multiplayer: arbiter save data {dir}: {copied} file(s) copied, {removed} removed, " +
-                        $"{failed} failed ({string.Join(", ", MirroredFolders)} mirrored from {hostSaveData})");
+            Log.Message($"Multiplayer: arbiter save data {dir}: {copied} file(s) copied ({bytes / (1024 * 1024)} MB), " +
+                        $"{removed} removed, {failed} failed in {watch.ElapsedMilliseconds} ms; mirrored from " +
+                        $"{hostSaveData}: {string.Join(", ", mirrored)} (folders named " +
+                        $"{string.Join("/", SkippedSubfolders)} inside them skipped)");
             return dir;
         }
 
         private static StringComparer PathComparer =>
             OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
+        // All files under root, relative to it, leaving out folders named in SkippedSubfolders (and what is in them)
+        private static IEnumerable<string> MirroredFiles(string root)
+        {
+            var pending = new Stack<string>();
+            pending.Push(root);
+            while (pending.Count > 0)
+            {
+                var dir = pending.Pop();
+                foreach (var file in Directory.GetFiles(dir))
+                    yield return Path.GetRelativePath(root, file);
+                foreach (var sub in Directory.GetDirectories(dir))
+                    if (!SkippedSubfolders.Contains(Path.GetFileName(sub)))
+                        pending.Push(sub);
+            }
+        }
+
         // Makes dst a copy of src: files that differ in size or write time are copied, files src does not have are
-        // removed (a stale settings file would give the arbiter settings the host does not have). Only ever called
-        // with dst under the arbiter's own folder.
-        private static void MirrorFolder(string src, string dst, ref int copied, ref int removed, ref int failed)
+        // removed (a stale settings file would give the arbiter settings the host does not have). Skipped subfolders
+        // are left alone on both sides. Only ever called with dst under the arbiter's own folder.
+        private static void MirrorFolder(string src, string dst, ref int copied, ref int removed, ref int failed,
+            ref long bytes)
         {
             var keep = new HashSet<string>(PathComparer);
 
             if (Directory.Exists(src))
             {
-                foreach (var file in Directory.GetFiles(src, "*", SearchOption.AllDirectories))
+                foreach (var rel in MirroredFiles(src))
                 {
-                    var rel = Path.GetRelativePath(src, file);
+                    var file = Path.Combine(src, rel);
                     keep.Add(rel);
                     var target = Path.Combine(dst, rel);
                     try
@@ -179,6 +239,7 @@ namespace Multiplayer.Client.Networking
                         File.Copy(file, target, true);
                         File.SetLastWriteTimeUtc(target, from.LastWriteTimeUtc);
                         copied++;
+                        bytes += from.Length;
                     }
                     catch (Exception e)
                     {
@@ -190,9 +251,10 @@ namespace Multiplayer.Client.Networking
 
             if (!Directory.Exists(dst)) return;
 
-            foreach (var file in Directory.GetFiles(dst, "*", SearchOption.AllDirectories))
+            foreach (var rel in MirroredFiles(dst).ToList())
             {
-                if (keep.Contains(Path.GetRelativePath(dst, file))) continue;
+                if (keep.Contains(rel)) continue;
+                var file = Path.Combine(dst, rel);
                 try
                 {
                     File.Delete(file);

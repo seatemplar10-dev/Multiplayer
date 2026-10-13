@@ -132,6 +132,7 @@ namespace Multiplayer.Client
 
             ScribeLike.provider = new ScribeProvider();
             settings = MultiplayerLoader.Multiplayer.instance!.GetSettings<MpSettings>();
+            DeferredStackTracing.ApplyTraceModeArg();
 
             EarlyInit.ProcessEnvironment();
             EarlyInit.EarlyPatches(harmony);

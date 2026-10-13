@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
@@ -34,13 +35,13 @@ namespace Multiplayer.Client.Desyncs
         {
             if (Native.LmfPtr == 0)
             {
-                // CoreCLR (RimWorld 1.7) has no Mono LMF to walk, so Fast has nothing of its own to record there.
-                // Fast and Slow both record managed traces (the default setting is Fast, and the arbiter gets no
-                // settings edit); None stays off (checked in ShouldAddStackTraceForDesyncLog).
-                // Cost: a System.Diagnostics.StackTrace per traced call (each Rand.Value/Rand.Int, thing spawn and
-                // despawn, unique id while ticking), microseconds each instead of the Mono walk's fraction of one, so
-                // busy maps tick noticeably slower with traces on. Set None to measure without them.
-                if (!Native.IsMono && ShouldAddStackTraceForDesyncLog())
+                // CoreCLR (RimWorld 1.7) has no Mono LMF to walk, so Fast records nothing there. A managed StackTrace
+                // per traced call (each Rand.Value/Rand.Int, thing spawn and despawn, unique id while ticking) costs
+                // microseconds instead of the Mono walk's fraction of one, so it only runs in the Slow mode. Slow is
+                // not saved in the settings file (MpSettings.ExposeData); set it for one run with -mptracemode=Slow.
+                // The arbiter is started with the host's current mode (ArbiterLauncher).
+                if (!Native.IsMono && Multiplayer.settings?.desyncTracingMode == DesyncTracingMode.Slow &&
+                    ShouldAddStackTraceForDesyncLog())
                     ManagedTrace();
                 return;
             }
@@ -68,6 +69,43 @@ namespace Multiplayer.Client.Desyncs
         // desync. By default the managed trace hash is the random state alone; the frames are still recorded for
         // the desync report. The -mptraceframehash switch hashes the frames too (the arbiter gets it from the host).
         public static readonly bool HashManagedFrames = GenCommandLine.CommandLineArgPassed(TraceFrameHashArg);
+
+        public const string TraceModeArg = "mptracemode";
+
+        // -mptracemode=None|Fast|Slow sets the desync tracing mode for this run only; desyncTracingMode is not in the
+        // settings file and the settings UI shows it only in debug builds. Called once, right after the settings load.
+        // "-mptracemode Slow" is accepted too: cmd launchers split "-name=value" at the "=".
+        internal static void ApplyTraceModeArg()
+        {
+            if (!TryGetArg(TraceModeArg, out var value)) return;
+
+            if (Enum.TryParse(value, true, out DesyncTracingMode mode) && Enum.IsDefined(typeof(DesyncTracingMode), mode))
+            {
+                Multiplayer.settings.desyncTracingMode = mode;
+                Log.Message($"Multiplayer: desync tracing mode {mode} (-{TraceModeArg}, this run only)");
+            }
+            else
+            {
+                Log.Warning($"Multiplayer: -{TraceModeArg}={value} is not None, Fast or Slow; tracing mode stays " +
+                            $"{Multiplayer.settings.desyncTracingMode}");
+            }
+        }
+
+        private static bool TryGetArg(string name, out string value)
+        {
+            if (GenCommandLine.TryGetCommandLineArg(name, out value)) return true;
+
+            var args = Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++)
+                if (string.Equals(args[i], "-" + name, StringComparison.OrdinalIgnoreCase) && !args[i + 1].StartsWith("-"))
+                {
+                    value = args[i + 1];
+                    return true;
+                }
+
+            value = null;
+            return false;
+        }
 
         private static void ManagedTrace()
         {
