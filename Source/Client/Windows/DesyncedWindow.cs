@@ -95,12 +95,17 @@ namespace Multiplayer.Client
 
         public void HandleHostDesyncInfo(SaveableDesyncInfo.HostInfo hostInfo)
         {
+            if (infoWritten)
+                Log.Warning("Multiplayer: the other side's desync traces arrived after the desync report was written; " +
+                            "they are not in it");
             this.hostInfo = hostInfo;
         }
 
         public override void WindowUpdate()
         {
-            const float maxWait = 5f;
+            // The other side's traces come back through the server; from the arbiter (a second, headless process) when
+            // it is Playing, which can take longer than from the in-process host
+            var maxWait = Multiplayer.session?.ArbiterPlaying == true ? 15f : 5f;
 
             var shouldWrite = hostInfo != null || Time.realtimeSinceStartup - openedAt > maxWait;
             if (!infoWritten && shouldWrite && desyncInfo.ReadyToSave)

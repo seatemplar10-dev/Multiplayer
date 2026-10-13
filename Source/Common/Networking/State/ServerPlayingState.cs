@@ -26,7 +26,8 @@ namespace Multiplayer.Common
         [TypedPacketHandler]
         public void HandleTraces(ClientTracesPacket packet)
         {
-            if (!Player.IsHost) return;
+            // Answers come from the side PlayerManager.OnDesync asked: the host, or the arbiter while it is Playing
+            if (!Player.IsHost && !Player.IsArbiter) return;
             Server.GetPlayer(packet.playerId)?.SendPacket(ServerTracesPacket.Transfer(packet.rawTraces, packet.rawJittedMethods));
         }
 

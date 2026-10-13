@@ -109,7 +109,21 @@ namespace Multiplayer.Common
         public void OnDesync(ServerPlayer player, int tick, int diffAt)
         {
             player.UpdateStatus(PlayerStatus.Desynced);
-            server.HostPlayer.SendPacket(ServerTracesPacket.Request(tick, diffAt, player.id));
+
+            // Ask the side whose sync opinion this player was compared with for its traces of that opinion. Sent before
+            // the pause and the desync join point below, so that side answers before it starts saving.
+            var traceSource = TraceSourceFor(player);
+            if (traceSource != null)
+            {
+                ServerLog.Log($"Desync reported by {player.Username} (opinion tick {tick}, trace {diffAt}): " +
+                              $"traces requested from {traceSource.Username}");
+                traceSource.SendPacket(ServerTracesPacket.Request(tick, diffAt, player.id));
+            }
+            else
+            {
+                ServerLog.Log($"Desync reported by {player.Username} (opinion tick {tick}, trace {diffAt}): " +
+                              "no other side to ask for traces");
+            }
 
             player.ResetTimeVotes();
 
@@ -118,6 +132,20 @@ namespace Multiplayer.Common
 
             if (server.settings.autoJoinPoint.HasFlag(AutoJoinPointFlags.Desync))
                 server.worldData.TryStartJoinPointCreation(true);
+        }
+
+        // The reference side of the desync check (ServerPlayingState.HandleDesyncCheck): while the arbiter is Playing only
+        // its sync opinions are relayed, to the host as well, so a desynced host or client was compared with the arbiter;
+        // otherwise clients are compared with the host. Asking the host when the host itself desynced against the arbiter
+        // returned "Traces not available" (it had already dropped the compared opinion) and never reached the arbiter.
+        // Never the desynced player itself: its own traces are already in its report. Null when nobody else can answer
+        // (standalone server without a host), where HostPlayer would throw.
+        private ServerPlayer? TraceSourceFor(ServerPlayer player)
+        {
+            var source = server.ArbiterPlaying && !player.IsArbiter
+                ? server.PlayingPlayers.FirstOrDefault(p => p.IsArbiter && p.status == PlayerStatus.Playing)
+                : server.PlayingPlayers.FirstOrDefault(p => p.IsHost);
+            return source == player ? null : source;
         }
 
         public static ColorRGB[] PlayerColors =

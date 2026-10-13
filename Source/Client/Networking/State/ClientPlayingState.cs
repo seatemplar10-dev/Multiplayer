@@ -182,8 +182,18 @@ namespace Multiplayer.Client
         {
             if (packet.mode == ServerTracesPacket.Mode.Request)
             {
-                var info = Multiplayer.game.sync.knownClientOpinions.FirstOrDefault(b => b.startTick == packet.tick);
-                var response = info?.GetFormattedStackTracesForRange(packet.diffAt) ?? "Traces not available";
+                var known = Multiplayer.game.sync.knownClientOpinions;
+                var info = known.FirstOrDefault(b => b.startTick == packet.tick);
+                // First line names the answering side: the report keeps the file name host_traces.txt, but since
+                // PlayerManager.OnDesync asks the arbiter while it is Playing, the traces may be the arbiter's
+                var side = Multiplayer.arbiterInstance ? "arbiter" : Multiplayer.LocalServer != null ? "host" : "client";
+                var header = $"Traces from: {side} {Multiplayer.username} (opinion start tick {packet.tick}, trace {packet.diffAt})\n";
+                var response = header + (info?.GetFormattedStackTracesForRange(packet.diffAt) ??
+                    $"Traces not available: no opinion with start tick {packet.tick} among the {known.Count} kept here" +
+                    (known.Count > 0 ? $" (start ticks {known[0].startTick}..{known[known.Count - 1].startTick})" : ""));
+                Log.Message($"Multiplayer: desync trace request for opinion tick {packet.tick} (trace {packet.diffAt}, " +
+                            $"player {packet.playerId}): " +
+                            (info != null ? $"sending {info.desyncStackTraces.Count} traces" : "not available"));
 
                 connection.Send(new ClientTracesPacket
                     {
@@ -197,7 +207,11 @@ namespace Multiplayer.Client
                 var traces = GZipStream.UncompressString(packet.rawTraces);
                 var jittedMethods = GZipStream.UncompressString(packet.rawJittedMethods);
                 var hostInfo = new SaveableDesyncInfo.HostInfo(traces, jittedMethods);
-                Find.WindowStack.WindowOfType<DesyncedWindow>()?.HandleHostDesyncInfo(hostInfo);
+                var window = Find.WindowStack.WindowOfType<DesyncedWindow>();
+                var firstLine = traces.Split('\n')[0];
+                Log.Message($"Multiplayer: desync traces received ({traces.Length} chars, \"{firstLine}\")" +
+                            (window == null ? " but no desync window is open: not saved" : ""));
+                window?.HandleHostDesyncInfo(hostInfo);
             }
         }
 
