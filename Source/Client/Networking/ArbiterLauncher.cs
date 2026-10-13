@@ -30,12 +30,22 @@ namespace Multiplayer.Client.Networking
         // keep their settings in a folder of their own (Missile Girl: MissileGirl\Mod_*.xml), others data that map
         // generation reads (RealRuins: blueprints), and Multiplayer's def check compares def names, not values, so
         // a difference there would only show up as a desync.
-        // Not mirrored: saves, Multiplayer's own output, the engine's caches (rebuilt per machine and GPU) and this
-        // folder itself.
+        // Not mirrored: saves and what is made from them, Multiplayer's own output and caches, the game's output, the
+        // engine's caches (rebuilt per machine and GPU) and this folder itself. Skipped folders are left alone in the
+        // arbiter's folder too, so what the arbiter writes there itself (its MpLogs, its MpCache) stays.
+        // MultiplayerTempConfigs is mirrored: the arbiter starts with the host's server configs from it.
         private static readonly HashSet<string> SkippedFolders = new(PathComparer)
         {
-            "Saves", "MpReplays", "MpDesyncs", SaveDataFolderName,
-            "BundleCache", "ShaderCache", "TextureCache", "HardwareProfile", "Logs"
+            "Saves", SaveDataFolderName,
+            // Multiplayer (Multiplayer.ReplaysDir, DesyncsDir, LogsDir, CacheDir)
+            "MpReplays", "MpDesyncs", "MpLogs", "MpCache",
+            // The game (GenFilePaths: ScreenshotFolderPath, DevOutputFolderPath, ExternalHistoryFolderPath, which
+            // nothing reads)
+            "Screenshots", "DevOutput", "External",
+            // Waylith's engine caches (PlatformPaths.DeleteMovedCaches, BundleCache) and its log folder
+            "BundleCache", "ShaderCache", "ShaderCache-editor", "TextureCache", "MeshCache", "HardwareProfile", "Logs",
+            // RimSaves: preview images and metadata of the saves for its save list
+            "RimSaves"
         };
 
         // Folders with these names are skipped at any depth inside a mirrored folder, in the host's copy and in the
