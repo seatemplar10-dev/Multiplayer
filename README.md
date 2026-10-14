@@ -4,13 +4,14 @@
 
 The RimWorld Multiplayer mod allows users to play full games of Rimworld cooperatively.
 
-## RimWorld 1.7 (this fork's `rw-1.7` branch)
+## RimWorld 1.7 (this fork's `waylith-1.7-port` branch)
 
-The `rw-1.7` branch is a port to RimWorld 1.7, which runs on .NET 10 instead of Mono. It does not need Prepatcher. The built DLLs are committed, so the repository itself is the mod:
+The `waylith-1.7-port` branch is a port to RimWorld 1.7, which runs on .NET 10 instead of Mono. It builds on StephenSHorton's `rw-1.7` port (protocol 56) and adds the lab fixes (protocol 57). The two cannot join each other. It does not need Prepatcher. The built DLLs are committed, so the repository itself is the mod:
 
-1. Unsubscribe the Workshop Multiplayer mod. This build uses the same package id.
-2. `git clone --recurse-submodules -b rw-1.7 https://github.com/StephenSHorton/Rimworld-Multiplayer.git` and junction or copy it into RimWorld's `Mods` folder.
-3. Every player needs RimWorld 1.7 and the same commit of this branch.
+1. Unsubscribe the Workshop Multiplayer and Multiplayer Compatibility mods. This build uses the same package id.
+2. `git clone --recurse-submodules -b waylith-1.7-port https://github.com/seatemplar10-dev/Multiplayer.git` and junction or copy it into RimWorld's `Mods` folder.
+3. Every player needs the same RimWorld 1.7 build (check `Version.txt`) and the same commit of this branch.
+4. Multiplayer Compatibility for 1.7: `seatemplar10-dev/Multiplayer-Compatibility`, branch `waylith-1.7`.
 
 Build notes are in `CLAUDE.md`.
 

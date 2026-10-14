@@ -10,7 +10,7 @@
   <modVersion></modVersion> <!-- filled out by workshop_bundler.sh -->
   <description>&lt;b&gt;Important: This mod should be placed right below Core and expansions in the mod list to work properly!
 Requires RimWorld 1.7&lt;/b&gt;\n
-This build is a RimWorld 1.7 port of the Multiplayer mod (github.com/StephenSHorton/Rimworld-Multiplayer, branch rw-1.7). It does not need Prepatcher.\n
+This build is a RimWorld 1.7 port of the Multiplayer mod (github.com/seatemplar10-dev/Multiplayer, branch waylith-1.7-port, protocol 57; based on StephenSHorton rw-1.7). It does not need Prepatcher.\n
 Multiplayer mod for RimWorld.
     
 FAQ - https://hackmd.io/@rimworldmultiplayer/docs/

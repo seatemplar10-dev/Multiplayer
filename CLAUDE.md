@@ -53,7 +53,7 @@ Check a change against the real game DLLs before shipping it. `rimworld-mods/too
 ### Installing this build
 
 1. Unsubscribe the Workshop Multiplayer mod (2606448745); this build uses the same package id, `rwmt.Multiplayer`.
-2. `git clone --recurse-submodules -b rw-1.7 https://github.com/StephenSHorton/Rimworld-Multiplayer.git`, then junction or copy the clone into RimWorld's `Mods` folder.
+2. `git clone --recurse-submodules -b waylith-1.7-port https://github.com/seatemplar10-dev/Multiplayer.git`, then junction or copy the clone into RimWorld's `Mods` folder. (StephenSHorton `rw-1.7` is protocol 56 and cannot join this protocol 57 build.)
 3. Every player needs RimWorld 1.7 and the same commit of this branch. Multiplayer compares mod files when a player joins.
 4. Pull with RimWorld closed.
 

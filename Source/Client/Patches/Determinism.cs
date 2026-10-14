@@ -729,25 +729,52 @@ namespace Multiplayer.Client.Patches
     // across parallel Unity Job batches. Thread scheduling differs between machines, so clients get
     // different candidate tile sets. Force single-batch execution in MP so tiles are processed in
     // tileId order, making the first 50 valid tiles consistent across all clients.
-    [HarmonyPatch(typeof(FastTileFinder), nameof(FastTileFinder.Query))]
+    //
+    // FastTileFinder.Closest schedules the same job with its own UnityData.GetIdealBatchCount call. Each worker
+    // keeps its own best result and replaces it only on a strictly smaller distance, so when two tiles tie exactly
+    // the winner depends on how the range was split into batches (and so on the core count). One batch means one
+    // worker slot walking the tiles in index order, and the lowest index wins every tie on every client.
+    [HarmonyPatch]
     static class FastTileFinderQueryDeterminismPatch
     {
-        static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+        static IEnumerable<MethodBase> TargetMethods()
+        {
+            foreach (var name in new[] { nameof(FastTileFinder.Query), nameof(FastTileFinder.Closest) })
+            {
+                // DeclaredMethod, not a name attribute: a missing method must fail loudly instead of patching nothing
+                var method = AccessTools.DeclaredMethod(typeof(FastTileFinder), name);
+                if (method == null)
+                    throw new Exception($"FastTileFinder.{name} not found, the single-batch determinism patch cannot be applied");
+                yield return method;
+            }
+        }
+
+        static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions, MethodBase original)
         {
             var getIdealBatchCount = AccessTools.Method(typeof(UnityData), nameof(UnityData.GetIdealBatchCount));
             var getBatchCount = AccessTools.Method(typeof(FastTileFinderQueryDeterminismPatch), nameof(GetBatchCount));
 
+            var patched = 0;
+
             foreach (var instr in instructions)
             {
                 if (instr.Calls(getIdealBatchCount))
+                {
                     yield return new CodeInstruction(OpCodes.Call, getBatchCount);
+                    patched++;
+                }
                 else
                     yield return instr;
             }
+
+            // Both methods schedule exactly one job through UnityData.GetIdealBatchCount in the 1.7 game.
+            const int expectedPatches = 1;
+            if (patched != expectedPatches)
+                Log.Error($"Patching FastTileFinder.{original?.Name} to a single job batch failed. Expected patches: {expectedPatches}, actual patches: {patched}. The game changed how it schedules the job; tile search results can differ between clients until this patch is updated.");
         }
 
         static int GetBatchCount(int length) =>
-            Multiplayer.Client != null ? length : UnityData.GetIdealBatchCount(length);
+            Multiplayer.Client != null ? Math.Max(length, 1) : UnityData.GetIdealBatchCount(length);
     }
 
 
