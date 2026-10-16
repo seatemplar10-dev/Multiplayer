@@ -451,12 +451,13 @@ namespace Multiplayer.Client.Patches
 
         private static bool ShouldUpdateCache(PawnCapacitiesHandler.CacheStatus status)
         {
-            return status == PawnCapacitiesHandler.CacheStatus.Uncached || !Multiplayer.InInterface && status == CachedInInterface;
+            // 1.7 lab (FIXES row 34): simulation decided positively (see StatWorkerGetValuePatch.HasValueInCache).
+            return status == PawnCapacitiesHandler.CacheStatus.Uncached || (Multiplayer.Client == null || Multiplayer.Ticking || Multiplayer.ExecutingCmds) && status == CachedInInterface;
         }
 
         private static PawnCapacitiesHandler.CacheStatus NewCacheStatus(PawnCapacitiesHandler.CacheStatus _)
         {
-            return Multiplayer.InInterface ? CachedInInterface : PawnCapacitiesHandler.CacheStatus.Cached;
+            return Multiplayer.Client == null || Multiplayer.Ticking || Multiplayer.ExecutingCmds ? PawnCapacitiesHandler.CacheStatus.Cached : CachedInInterface;
         }
     }
 
@@ -510,7 +511,10 @@ namespace Multiplayer.Client.Patches
 
         private static bool HasValueInCache(bool hasValueInCache, StatWorker worker, Thing t)
         {
-            var simulating = !Multiplayer.InInterface;
+            // 1.7 lab (FIXES row 34): "simulating" decided positively. !InInterface is also true during long events and
+            // the host's join-point reload, when screen code (e.g. Moody) still reads stats - those reads must stay
+            // interface-only, or the host's simulation cache fills where the arbiter's/joiner's does not.
+            var simulating = Multiplayer.Client == null || Multiplayer.Ticking || Multiplayer.ExecutingCmds;
             return hasValueInCache && !(simulating && worker.temporaryStatCache[t].gameTick < 0);
         }
 
@@ -522,7 +526,7 @@ namespace Multiplayer.Client.Patches
 
         private static int NewCacheTicks(int gameTick)
         {
-            return Multiplayer.InInterface ? -gameTick : gameTick;
+            return Multiplayer.Client == null || Multiplayer.Ticking || Multiplayer.ExecutingCmds ? gameTick : -gameTick;
         }
     }
 
@@ -798,5 +802,33 @@ namespace Multiplayer.Client.Patches
             Multiplayer.Client != null ? Math.Max(length, 1) : UnityData.GetIdealBatchCount(length);
     }
 
+    // 1.7 lab (FIXES row 35, lab runs mp43/mp47p): PawnApparelGenerator.allApparelPairs held the same 55,127 pairs with the
+    // same prices on host and arbiter, but in a different order (the arbiter's one price-descending sort; the host's four
+    // separately sorted runs). Pawn generation walks that list with Where(...).TryRandomElementByWeight, and
+    // ApparelRequirementTagsMatch draws Rand inside the predicate, so the order changes the number of draws -> "Wrong random
+    // state" at the first generated pawn. Whenever a multiplayer game finishes initialising (hosting reload, join point,
+    // arbiter/joiner load) both generator lists are sorted with one total order: price descending (vanilla's own order), then
+    // thing defName, then stuff defName.
+    [HarmonyPatch(typeof(Game), nameof(Game.FinalizeInit))]
+    static class SortGeneratorPairsDeterministically
+    {
+        static void Postfix()
+        {
+            if (Multiplayer.Client == null) return;
+            SortPairs(PawnApparelGenerator.allApparelPairs);
+            SortPairs(PawnWeaponGenerator.allWeaponPairs);
+        }
+
+        static void SortPairs(List<ThingStuffPair> pairs) => pairs?.Sort(ComparePairs);
+
+        static int ComparePairs(ThingStuffPair a, ThingStuffPair b)
+        {
+            int c = b.Price.CompareTo(a.Price);
+            if (c != 0) return c;
+            c = string.CompareOrdinal(a.thing?.defName, b.thing?.defName);
+            if (c != 0) return c;
+            return string.CompareOrdinal(a.stuff?.defName, b.stuff?.defName);
+        }
+    }
 
 }
