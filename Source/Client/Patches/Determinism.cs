@@ -375,6 +375,27 @@ namespace Multiplayer.Client.Patches
         }
     }
 
+    // 1.7 lab (FIXES row 23, lab runs mp26b/c, mp27a-d): the per-def overload re-evaluates cached situational thoughts
+    // (RecalculateState) and creates + caches missing ones (TryCreateThought) for whoever asks. Called from interface code
+    // (tooltips, inspect panes, mood widgets) it changed the mood of pawns on the viewing client only (state dumps: host
+    // instant mood 5 points lower than the arbiter at the same tick, an extra -5 situational thought), so mood-gated Rand
+    // draws (inspirations, mental breaks) split. Outside ticks and commands it now only reads the cache.
+    [HarmonyPatch(typeof(SituationalThoughtHandler), nameof(SituationalThoughtHandler.AppendMoodThoughts),
+        new[] { typeof(ThoughtDef), typeof(List<Thought>) })]
+    static class DontCreateMoodThoughtsInInterface
+    {
+        static bool Prefix(SituationalThoughtHandler __instance, ThoughtDef def, List<Thought> thoughts)
+        {
+            if (Multiplayer.Client == null || Multiplayer.Ticking || Multiplayer.ExecutingCmds) return true;
+
+            foreach (var thought in __instance.cachedThoughts)
+                if (thought.def == def && thought.Active)
+                    thoughts.Add(thought);
+
+            return false;
+        }
+    }
+
     [HarmonyPatch(typeof(SituationalThoughtHandler), nameof(SituationalThoughtHandler.Notify_SituationalThoughtsDirty))]
     static class NotifyThoughtsDirtyPatch
     {
