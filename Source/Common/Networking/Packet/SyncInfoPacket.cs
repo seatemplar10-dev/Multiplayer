@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Multiplayer.Common.Networking.Packet;
@@ -43,6 +44,36 @@ public record struct ServerSyncInfoPacket : IPacket
 
 public record struct SyncOpinion : IPacketBufferable
 {
+    /// <summary>
+    /// The most trace hashes (and, on the client, trace items) one opinion holds. Every side stops recording at this
+    /// count, so the host, the arbiter and a joiner all keep and compare the same prefix of the window and the
+    /// opinion always fits its packet. Without it, a window with millions of traces (<c>-mptracemode=Slow</c> records
+    /// one per Rand call) overflowed the list limit below and the whole opinion was never sent. Random states are not
+    /// capped, so the window stays checked after the cap. 1 &lt;&lt; 16 hashes are 256 KiB: a joining client is sent up
+    /// to 10 stored opinions (ServerPlayingState) inside the world data packet, which is limited to
+    /// ConnectionBase.MaxFragmentPacketTotalSize (32 MiB) together with the save, and the lab's test save is 170 MB of
+    /// XML. A normal 30-tick window held ~2,800 traces in run mp21; only the first window after hosting held millions.
+    /// </summary>
+    public const int MaxTraceHashes = 1 << 16;
+
+    /// <summary>
+    /// Whether two trace hash lists agree. Only the first <see cref="MaxTraceHashes"/> entries of each count, so a
+    /// longer list (an older sender, or one that was never capped) cannot turn the cap into a false mismatch. Below
+    /// the cap the lists must be equal, including their length, as before.
+    /// </summary>
+    public static bool TraceHashesMatch(IReadOnlyList<int> a, IReadOnlyList<int> b)
+    {
+        var count = Math.Min(a.Count, MaxTraceHashes);
+        if (count != Math.Min(b.Count, MaxTraceHashes))
+            return false;
+
+        for (var i = 0; i < count; i++)
+            if (a[i] != b[i])
+                return false;
+
+        return true;
+    }
+
     public int startTick;
     public List<uint> commandRandomStates;
     public List<uint> worldRandomStates;
@@ -59,7 +90,7 @@ public record struct SyncOpinion : IPacketBufferable
         buf.Bind(ref worldRandomStates, BinderOf.UInt());
         buf.Bind(ref mapRandomStates, BinderOf.Identity<MapRandomState>());
         // Max 2M trace hashes. For some big saves, the trace hashes can reach ~600k entries, so this includes
-        // some leeway.
+        // some leeway. Senders stay under MaxTraceHashes, which is far lower: the packet as a whole is limited too.
         buf.Bind(ref traceHashes, BinderOf.Int(), maxLength: 1<<21);
 
         buf.Bind(ref simulating);

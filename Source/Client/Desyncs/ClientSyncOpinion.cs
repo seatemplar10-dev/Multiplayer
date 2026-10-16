@@ -30,6 +30,12 @@ namespace Multiplayer.Client
         public bool simulating;
         public RoundModeEnum roundMode;
 
+        // No more traces are recorded past SyncOpinion.MaxTraceHashes, on every side alike (see SyncCoordinator)
+        public bool TraceCapReached => desyncStackTraceHashes.Count >= SyncOpinion.MaxTraceHashes;
+
+        // Set when a trace was dropped because of the cap; SyncCoordinator.FinishLocalOpinion logs it
+        public bool tracesCapped;
+
         public string CheckForDesync(ClientSyncOpinion other)
         {
             if (roundMode != other.roundMode)
@@ -53,7 +59,7 @@ namespace Multiplayer.Client
             if (!commandRandomStates.SequenceEqual(other.commandRandomStates))
                 return "Random state from commands doesn't match";
 
-            if (!simulating && !other.simulating && desyncStackTraceHashes.Any() && other.desyncStackTraceHashes.Any() && !desyncStackTraceHashes.SequenceEqual(other.desyncStackTraceHashes))
+            if (!simulating && !other.simulating && desyncStackTraceHashes.Any() && other.desyncStackTraceHashes.Any() && !SyncOpinion.TraceHashesMatch(desyncStackTraceHashes, other.desyncStackTraceHashes))
                 return "Trace hashes don't match";
 
             return null;

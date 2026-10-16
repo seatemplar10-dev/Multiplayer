@@ -30,7 +30,12 @@ namespace Multiplayer.Client.Patches
             if (Multiplayer.Client == null)
                 return true;
 
-            __result = __instance.Spawned ? VTRSync.GetSynchronizedUpdateRate(__instance) : VTRSync.MaximumVtr;
+            // 1.7 lab: spawned projectiles always move every tick, the rate single player uses on screen. The map's
+            // synced VTR depends on CurrentPlayerCount, which is not saved and is not re-sent after a join-point reload
+            // (SendViewedMapUpdate returns while reloading, and nobody's viewed map changes), so after every reload VTR
+            // sat at MaximumVtr and vanilla-class projectiles hopped every 15 ticks ("slow-motion" volleys, lab mp19).
+            // A constant takes no per-client input, so it stays deterministic.
+            __result = __instance.Spawned ? VTRSync.MinimumVtr : VTRSync.MaximumVtr;
             return false;
         }
     }

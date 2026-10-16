@@ -29,6 +29,7 @@ namespace Multiplayer.Client
         public int lastValidTick = -1;
         public bool arbiterWasPlayingOnLastValidTick;
         private int checksPassed;
+        private int cappedOpinions;
 
         private const int MaxBacklog = 30;
 
@@ -38,7 +39,34 @@ namespace Multiplayer.Client
             currentOpinion.roundMode = RoundMode.GetCurrentRoundMode();
             var opinion = currentOpinion;
             currentOpinion = null;
+
+            // Every side drops the same traces past the cap, so the window is still compared; say so now and then
+            if (opinion.tracesCapped)
+            {
+                cappedOpinions++;
+                if (cappedOpinions == 1 || cappedOpinions % 100 == 0)
+                    Log.Warning($"Multiplayer: the sync opinion starting at tick {opinion.startTick} reached the cap of " +
+                                $"{SyncOpinion.MaxTraceHashes} trace hashes; later traces of its window are dropped on " +
+                                "every side and random states are still compared in full " +
+                                $"({cappedOpinions} capped windows so far)");
+            }
+
             return opinion;
+        }
+
+        /// <summary>
+        /// True once the opinion being built holds <see cref="SyncOpinion.MaxTraceHashes"/> traces: the next trace is
+        /// dropped, so callers can skip capturing it. A trace is dropped whole (hash and item together, so their
+        /// indices stay aligned). The cap is a fixed count in the deterministic trace sequence, so the host, the
+        /// arbiter and joiners all keep the same prefix of the window. Never starts an opinion.
+        /// </summary>
+        public bool DropTraceAtCap()
+        {
+            var opinion = currentOpinion;
+            if (opinion == null || !opinion.TraceCapReached) return false;
+
+            opinion.tracesCapped = true;
+            return true;
         }
 
         /// <summary>
@@ -212,6 +240,8 @@ namespace Multiplayer.Client
 
             OpinionInBuilding.TryMarkSimulating();
 
+            if (DropTraceAtCap()) return;
+
             int hash = Gen.HashCombineInt(info1.GetHashCode(), info2.GetHashCode());
 
             OpinionInBuilding.desyncStackTraces.Add(new StackTraceLogItemObj {
@@ -229,6 +259,12 @@ namespace Multiplayer.Client
             if (!ShouldCollect) return;
 
             OpinionInBuilding.TryMarkSimulating();
+
+            if (DropTraceAtCap())
+            {
+                item.Dispose();
+                return;
+            }
 
             item.depth = depth;
             item.ticksGame = Find.TickManager.ticksGameInt;

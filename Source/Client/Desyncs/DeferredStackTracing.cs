@@ -145,6 +145,10 @@ namespace Multiplayer.Client.Desyncs
             if (Multiplayer.settings.desyncTracingMode == DesyncTracingMode.None) return false;
             if (Multiplayer.game == null) return false;
 
+            // The opinion being built is full (SyncOpinion.MaxTraceHashes): the trace would be dropped, so don't
+            // pay for capturing it
+            if (Multiplayer.game.sync.DropTraceAtCap()) return false;
+
             if (!Multiplayer.game.gameComp.logDesyncTraces) return false;
 
             if (Rand.stateStack.Count > 1) return false;
