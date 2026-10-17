@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
+using Multiplayer.API;
 using Multiplayer.Common;
 using Multiplayer.Common.Networking.Packet;
 using RimWorld;
@@ -11,7 +12,61 @@ namespace Multiplayer.Client;
 
 public static class Autosaving
 {
+    // 1.7 lab (FIXES row 41): saving runs every mod's ExposeData(Saving), and some of that changes the live game (PsiTech
+    // deletes each non-activated pawn's tracker; the next stat read rebuilds it and dirties the pawn's capacity cache). On a
+    // hosted server the autosave used to save on the host only, so the host's simulation drifted from the arbiter's and the
+    // joiners' (lab mp51: host-only capacity refreshes from the autosave tick on -> RJW Need_Sex drift, row 36). The save now
+    // runs on every instance at the same tick: the host sends a synced command, every instance queues the same save long
+    // event; only the host writes the file and asks for the join point.
+    private const int MaxDeferredFrames = 600;
+
     public static void DoAutosave()
+    {
+        if (Multiplayer.LocalServer != null && !Multiplayer.IsReplay && !Multiplayer.arbiterInstance)
+        {
+            // Called from ConstantTicker (inside the tick loop), where a sync method would run locally instead of being sent.
+            OnMainThread.Enqueue(() => SendSyncedAutosave(0));
+            return;
+        }
+
+        QueueHostSave();
+    }
+
+    private static void SendSyncedAutosave(int frames)
+    {
+        if (Multiplayer.Client == null)
+            return;
+
+        if (Multiplayer.ShouldSync)
+        {
+            SyncedAutosave();
+            return;
+        }
+
+        if (frames < MaxDeferredFrames)
+        {
+            OnMainThread.Enqueue(() => SendSyncedAutosave(frames + 1));
+            return;
+        }
+
+        Log.Warning("Multiplayer: synced autosave could not be sent (no interface frame); saving on this instance only");
+        QueueHostSave();
+    }
+
+    [SyncMethod]
+    public static void SyncedAutosave()
+    {
+        if (Multiplayer.LocalServer != null && !Multiplayer.arbiterInstance)
+        {
+            QueueHostSave();
+            return;
+        }
+
+        // Same ExposeData(Saving) side effects as the host's save, at the same point of the simulation; the data is dropped.
+        LongEventHandler.QueueLongEvent(() => SaveLoad.SaveGameData(), "MpSaving", false, null);
+    }
+
+    private static void QueueHostSave()
     {
         LongEventHandler.QueueLongEvent(() =>
         {
