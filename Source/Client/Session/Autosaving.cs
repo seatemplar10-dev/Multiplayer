@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using Multiplayer.API;
@@ -15,55 +15,33 @@ public static class Autosaving
     // 1.7 lab (FIXES row 41): saving runs every mod's ExposeData(Saving), and some of that changes the live game (PsiTech
     // deletes each non-activated pawn's tracker; the next stat read rebuilds it and dirties the pawn's capacity cache). On a
     // hosted server the autosave used to save on the host only, so the host's simulation drifted from the arbiter's and the
-    // joiners' (lab mp51: host-only capacity refreshes from the autosave tick on -> RJW Need_Sex drift, row 36). The save now
-    // runs on every instance at the same tick: the host sends a synced command, every instance queues the same save long
-    // event; only the host writes the file and asks for the join point.
-    private const int MaxDeferredFrames = 600;
+    // joiners' (lab mp51: host-only capacity refreshes from the autosave tick on -> RJW Need_Sex drift, row 36).
+    // A synced save long event on every instance froze the catching-up arbiter (lab mp53), so the autosave now rides
+    // Multiplayer's own join point: the host only asks for a forced join point, every instance saves and reloads at that
+    // command's tick (CreateJoinPointAndSendIfHost), and the host writes the autosave file from the join point snapshot.
+    internal static string pendingAutosaveFile;
 
     public static void DoAutosave()
     {
-        if (Multiplayer.LocalServer != null && !Multiplayer.IsReplay && !Multiplayer.arbiterInstance)
+        if (Multiplayer.LocalServer != null && Multiplayer.session?.ConnectedToStandaloneServer != true && !Multiplayer.IsReplay)
         {
-            // Called from ConstantTicker (inside the tick loop), where a sync method would run locally instead of being sent.
-            OnMainThread.Enqueue(() => SendSyncedAutosave(0));
+            pendingAutosaveFile ??= GetNextAutosaveFileName();
+            SendAutosavingRequest(JoinPointRequestReason.Save);
             return;
         }
 
         QueueHostSave();
     }
 
-    private static void SendSyncedAutosave(int frames)
+    // Called on the host right after a join point snapshot was made.
+    internal static void WritePendingAutosave(GameDataSnapshot snapshot)
     {
-        if (Multiplayer.Client == null)
+        var name = pendingAutosaveFile;
+        if (name == null || snapshot == null)
             return;
 
-        if (Multiplayer.ShouldSync)
-        {
-            SyncedAutosave();
-            return;
-        }
-
-        if (frames < MaxDeferredFrames)
-        {
-            OnMainThread.Enqueue(() => SendSyncedAutosave(frames + 1));
-            return;
-        }
-
-        Log.Warning("Multiplayer: synced autosave could not be sent (no interface frame); saving on this instance only");
-        QueueHostSave();
-    }
-
-    [SyncMethod]
-    public static void SyncedAutosave()
-    {
-        if (Multiplayer.LocalServer != null && !Multiplayer.arbiterInstance)
-        {
-            QueueHostSave();
-            return;
-        }
-
-        // Same ExposeData(Saving) side effects as the host's save, at the same point of the simulation; the data is dropped.
-        LongEventHandler.QueueLongEvent(() => SaveLoad.SaveGameData(), "MpSaving", false, null);
+        pendingAutosaveFile = null;
+        SaveGameToFile_Overwrite(name, snapshot);
     }
 
     private static void QueueHostSave()

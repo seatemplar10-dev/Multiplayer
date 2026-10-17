@@ -228,7 +228,9 @@ namespace Multiplayer.Common
             // On standalone, any playing client can trigger a join point (always, regardless of settings)
             // On hosted, only the host can trigger and only if the Autosave flag is set
             if (Server.IsStandaloneServer ||
-                (Player.IsHost && Server.settings.autoJoinPoint.HasFlag(AutoJoinPointFlags.Autosave)))
+                (Player.IsHost && (forceJoinPoint || Server.settings.autoJoinPoint.HasFlag(AutoJoinPointFlags.Autosave))))
+                // 1.7 lab (FIXES row 41): a host Save request always makes a join point - the hosted autosave no longer saves
+                // on the host alone, it is written from the join point snapshot, so every instance saves at the same tick
                 Server.worldData.TryStartJoinPointCreation(forceJoinPoint, sourcePlayer: Player);
         }
 

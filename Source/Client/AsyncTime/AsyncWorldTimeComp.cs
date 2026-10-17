@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using HarmonyLib;
@@ -291,6 +291,10 @@ public class AsyncWorldTimeComp : IExposable, ITickable
             Multiplayer.GameComp.multifaction,
             ReloadOptimizationMode.ForJoinPointSnapshot
         );
+
+        // 1.7 lab (FIXES row 41): a hosted autosave is written from this snapshot (Autosaving.DoAutosave)
+        if (Multiplayer.LocalServer != null && !Multiplayer.arbiterInstance)
+            Autosaving.WritePendingAutosave(Multiplayer.session.dataSnapshot);
 
         if (!TickPatch.Simulating && !Multiplayer.IsReplay)
         {
