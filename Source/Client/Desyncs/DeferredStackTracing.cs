@@ -227,6 +227,22 @@ namespace Multiplayer.Client.Desyncs
         static void Finalizer() => DeferredStackTracing.ignoreTraces--;
     }
 
+    // 1.7 lab row 78: on-screen messages and letters take an id inside the tick only on a PC that shows them (never on the
+    // headless arbiter), so their GetNextID trace shifted every later trace and flagged a desync with identical game state
+    [HarmonyPatch(typeof(UniqueIDsManager), nameof(UniqueIDsManager.GetNextMessageID))]
+    static class MessageIdTraceIgnore
+    {
+        static void Prefix() => DeferredStackTracing.ignoreTraces++;
+        static void Finalizer() => DeferredStackTracing.ignoreTraces--;
+    }
+
+    [HarmonyPatch(typeof(UniqueIDsManager), nameof(UniqueIDsManager.GetNextLetterID))]
+    static class LetterIdTraceIgnore
+    {
+        static void Prefix() => DeferredStackTracing.ignoreTraces++;
+        static void Finalizer() => DeferredStackTracing.ignoreTraces--;
+    }
+
     /*[HarmonyPatch(typeof(StoreUtility), nameof(StoreUtility.TryFindBestBetterStoreCellForWorker))]
     static class FindBestStorageCellTraceIgnore
     {
