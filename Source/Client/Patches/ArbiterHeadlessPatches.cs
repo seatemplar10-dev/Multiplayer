@@ -35,6 +35,28 @@ namespace Multiplayer.Client
         static bool Prefix() => false;
     }
 
+    /// Waylith's headless loop (EngineApplication.RunHeadlessLoop) never dispatches OnGUI: only ImguiDispatch does, and
+    /// Bootstrap.ConfigureFrameRenderer creates it for a window only. A synchronous long event with a text and the standard
+    /// window waits until LongEventHandler.DrawLongEventWindowContents sets alreadyDisplayed on a Repaint
+    /// (QueuedLongEvent.ShouldWaitUntilDisplayed), so on a headless instance it never runs. Multiplayer's join point
+    /// ("MpCreatingJoinPoint", AsyncWorldTimeComp) is one: the arbiter stopped at every join point after its own join, sent
+    /// Freeze and never reloaded or uploaded the world, so the join point never ended and a rejoin ("Try resync") waited on
+    /// it forever (1.7 lab mp55/mp56). Nothing is ever displayed here, so the current event counts as displayed and runs on
+    /// the next update, as it does one frame after the window is drawn on a windowed instance. A field write before the
+    /// update, not a patch on the small getter, which the JIT may have inlined into its callers.
+    [HarmonyPatch(typeof(LongEventHandler), nameof(LongEventHandler.LongEventsUpdate))]
+    static class HeadlessLongEventDisplayed
+    {
+        static bool Prepare() => Multiplayer.arbiterInstance || GenCommandLine.CommandLineArgPassed("headless");
+
+        static void Prefix()
+        {
+            var current = LongEventHandler.currentEvent;
+            if (current is { alreadyDisplayed: false })
+                current.alreadyDisplayed = true;
+        }
+    }
+
     /// With -headless, UI.screenWidth is 0, so the colonist bar's maximum width (screen width - 520) is negative and
     /// ColonistBarDrawLocsFinder.FindBestScale loops forever looking for a scale at which a row fits. Anything that
     /// reads ColonistBar.Entries reaches it (the lab's headless observer hung there inside one frame through Moody's
