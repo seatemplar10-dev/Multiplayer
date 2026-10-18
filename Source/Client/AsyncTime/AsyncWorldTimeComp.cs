@@ -156,6 +156,7 @@ public class AsyncWorldTimeComp : IExposable, ITickable
 
         // Last: Tick() calls PreContext outside its try, so pin only once everything above has run
         WorldCurrentMapPin.Pin();
+        Patches.SimGuards.Enter(null);   // 1.7 lab: Patches/SimGuards.cs (FIXES row 87)
     }
 
     public void PostContext()
@@ -174,6 +175,7 @@ public class AsyncWorldTimeComp : IExposable, ITickable
         }
         finally
         {
+            Patches.SimGuards.Exit();
             // After the world's random state is popped: restoring a removed view runs UI code
             WorldCurrentMapPin.Unpin();
         }

@@ -191,10 +191,14 @@ namespace Multiplayer.Client
 
             // Reset the effects of SkyManager.SkyManagerUpdate
             map.skyManager.curSkyGlowInt = map.skyManager.CurrentSkyTarget().glow;
+
+            // 1.7 lab: per-PC inputs answered from synced state inside this context (Patches/SimGuards.cs, FIXES row 87)
+            Patches.SimGuards.Enter(map);
         }
 
         public void PostContext()
         {
+            Patches.SimGuards.Exit();
             prevTime?.Set();
 
             randState = Rand.StateCompressed;
