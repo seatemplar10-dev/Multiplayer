@@ -14,6 +14,18 @@ namespace Multiplayer.Client.Patches
     [HarmonyPatch(typeof(PathFinder), nameof(PathFinder.PathFinderTick))]
     static class PathJobsComplete
     {
+        // Lab mutation test (FIXES row 120): -mplabnoc15 leaves this out, so a replay A/B under chaos scheduling must split.
+        // ArbiterLauncher passes it on to the arbiter.
+        public const string OffArg = "mplabnoc15";
+        public static readonly bool Off = GenCommandLine.CommandLineArgPassed(OffArg);
+
+        static bool Prepare()
+        {
+            if (!Off) return true;
+            Log.Warning($"Multiplayer: -{OffArg}: path jobs are NOT completed inside PathFinderTick (FIXES row 119, C15) - lab mutation test");
+            return false;
+        }
+
         [HarmonyPriority(Priority.First)]
         static void Postfix(PathFinder __instance)
         {

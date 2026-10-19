@@ -151,6 +151,8 @@ namespace Multiplayer.Client.Networking
             // Lab mutation test: the arbiter runs without the list order guard too (FIXES row 113)
             if (global::Multiplayer.Client.Patches.ListerThingsKeepOrder.Off)
                 psi.ArgumentList.Add("-" + global::Multiplayer.Client.Patches.ListerThingsKeepOrder.OffArg);
+            if (global::Multiplayer.Client.Patches.PathJobsComplete.Off)
+                psi.ArgumentList.Add("-" + global::Multiplayer.Client.Patches.PathJobsComplete.OffArg);
 
             psi.RedirectStandardOutput = true;
             psi.RedirectStandardError = true;
