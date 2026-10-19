@@ -13,6 +13,8 @@ namespace Multiplayer.Client.Patches
     //   PatchFunctions.UpdateWrapper (the one place every Patch/Unpatch/PatchAll goes through) sets a flag and suspends a gated
     //   postfix that landed on a method without a frame; the rescan runs on the main thread from OnMainThread.Update outside long
     //   events, at most every 2 s, and is retried after a failure. One summary line per pass whose result changed.
+    //   The session-start pass reads every patched method; a "patches changed" pass re-reads only the originals the hook noted
+    //   (FIXES row 121: a full rescan of ~7,400 methods per pass made the main thread crawl in replays rp43/rp44).
     //   Nothing is patched before the first Multiplayer session, so single player without Multiplayer ever connected is untouched.
     //   After a session the patches stay: they cannot gate (Multiplayer.Client == null), but the methods keep the replacements
     //   rebuilt at session start (every transpiler on them ran again then, and they carry our try/finalizer).
@@ -34,7 +36,7 @@ namespace Multiplayer.Client.Patches
 
         static volatile bool dirty, applying;
         static bool started, initDone, leakLogged, callerLogged;
-        static int applyingThread = -1, failures;
+        static int applyingThread = -1, failures, changedPassesLogged;
         static string lastSummary;
         static long lastScanMs = -RescanIntervalMs;
         const long RescanIntervalMs = 2000;   // a mod that patches every frame (profilers, runtime toggles) must not cost a scan per frame
@@ -47,7 +49,7 @@ namespace Multiplayer.Client.Patches
                 return;
             }
             started = true;
-            Discover("session start");
+            Discover("session start", full: true);
         }
 
         // OnMainThread.Update, every frame while connected
@@ -69,7 +71,7 @@ namespace Multiplayer.Client.Patches
             if (!dirty || !started || applying) return;
             if (LongEventHandler.currentEvent != null) return;   // patch only between long events (loading can run off the main thread)
             if (Multiplayer.clock.ElapsedMilliseconds - lastScanMs < RescanIntervalMs) return;
-            Discover("patches changed");
+            Discover("patches changed", full: false);
         }
 
         static void Init()
@@ -92,7 +94,7 @@ namespace Multiplayer.Client.Patches
         // landed on a method without a frame, suspends that postfix until the rescan frames it.
         static void UpdateWrapperPostfix(MethodBase original, PatchInfo patchInfo)
         {
-            if (applying && Environment.CurrentManagedThreadId == applyingThread) return;
+            if (C13Core.InOwnPass || applying && Environment.CurrentManagedThreadId == applyingThread) return;
             dirty = true;
             if (started && System.Threading.Interlocked.Increment(ref changesSeen) <= 20)
             {
@@ -114,7 +116,8 @@ namespace Multiplayer.Client.Patches
             catch { }
         }
 
-        public static void Discover(string reason)
+        // full: read every patched method (session start); otherwise only the originals noted since the last pass
+        public static void Discover(string reason, bool full)
         {
             if (!enabled) return;
             if (!UnityData.IsInMainThread) { dirty = true; return; }
@@ -128,14 +131,22 @@ namespace Multiplayer.Client.Patches
             {
                 if (!initDone) Init();
                 var watch = System.Diagnostics.Stopwatch.StartNew();
-                var res = C13Core.Discover(reason,
+                var res = C13Core.Discover(reason, full,
                     m => m.DeclaringType == typeof(SyncTemplates),
                     m => Sync.methodBaseToInternalId.TryGetValue(m, out int id) ? id : -1);
                 watch.Stop();
                 foreach (var e in res.apply.errors) Log.Warning("MP C13 postfix guard: " + e);
-                // compare without the pass name: log only when the guard changed
+                // compare without the pass name: log only when the guard changed (and the first 3 "patches changed" passes, for
+                // their cost: row 121)
                 var key = res.summary.Substring(res.summary.IndexOf("):", StringComparison.Ordinal));
-                if (key != lastSummary) { lastSummary = key; Log.Message(res.summary + $" [{watch.ElapsedMilliseconds} ms]"); }
+                bool logCost = !res.full && changedPassesLogged < 3;
+                if (key != lastSummary || logCost)
+                {
+                    lastSummary = key;
+                    if (!res.full) changedPassesLogged++;
+                    Log.Message(res.summary + $" [{watch.ElapsedMilliseconds} ms, {(res.full ? "full" : "incremental")} pass: {res.changed} noted changes, " +
+                        $"{res.read} patch infos read, index {res.indexedPostfixes} foreign postfixes on {res.indexedTargets} methods]");
+                }
             }
             catch (Exception e)
             {

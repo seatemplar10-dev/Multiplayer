@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -19,6 +20,11 @@ namespace Multiplayer.Client.Patches
     //   others, nested guarded calls each have their own frame.
     // Never consumes Rand; never gates in a tick, a command or outside Multiplayer (the context check is NonSimMpContext and the
     // sync intercept only happens in interface code). Kept free of game types so the test project runs it against the lab Harmony.
+    // Discovery is incremental (FIXES row 121): a full pass (session start) reads the patch info of every patched method; a later
+    // "patches changed" pass re-reads only the originals Harmony reported since (NotePatchChange, from the UpdateWrapper hook) and
+    // keeps a foreign postfix method -> originals index (and its reverse), the per-original decisions and tie flags up to date.
+    // Reading patch info is the slow part (Harmony 3 deserializes the stored state and resolves each patch method by token);
+    // 7,400 reads per pass kept the main thread busy in replays rp43/rp44. Apply still works on the whole (small) decision set.
     public static class C13Core
     {
         public const int FlagMpSkipped = 1, FlagSyncIntercepted = 2, FlagArmed = 4;
@@ -54,8 +60,23 @@ namespace Multiplayer.Client.Patches
         // Gated postfix methods that currently have a target WITHOUT a frame (added by a mod after the last pass, or a bracket that
         // failed): such a call would see the enclosing frame, so these postfixes are not gated until a pass frames every target.
         // A Gate on a foreign postfix cannot check its caller by stack walk: the target may call it as a tail call (fact F15b).
+        //   suspended: computed by the last pass (from the index); noted: set by NotePatchChange (any thread) with the number of the
+        //   note, and dropped by the first pass that started after the note, which re-read the changed original (see Discover).
         static volatile HashSet<MethodBase> suspended = new();
-        static readonly object suspendLock = new();
+        static readonly ConcurrentDictionary<MethodBase, long> noted = new();
+        static long noteSeq;
+
+        // Originals whose patches changed since a pass last read them (any thread; NotePatchChange). Our own patching is not noted.
+        static readonly ConcurrentDictionary<MethodBase, byte> pending = new();
+        [ThreadStatic] static bool inPass;
+        public static bool InOwnPass => inPass;   // true on the thread running a pass: the patches it makes are ours
+        public static int PendingCount => pending.Count;
+
+        // Seams (tests): how a pass reads Harmony's patch state. PatchInfoReads counts reads (diagnostics + the cost test).
+        internal static Func<IEnumerable<MethodBase>> allPatchedMethods = Harmony.GetAllPatchedMethods;
+        internal static Func<MethodBase, HarmonyLib.Patches> patchInfoOf = Harmony.GetPatchInfo;
+        public static long PatchInfoReads;
+        internal static bool dropNotesForTest;   // test switch: lose every note (the negative control of the incremental tests)
 
         public static int GateSkips;          // postfix calls skipped so far (all threads; diagnostics only)
         public static int SkipCallerUnknown;  // MP prefix skips whose caller the stack walk could not name (frame used instead)
@@ -172,7 +193,7 @@ namespace Multiplayer.Client.Patches
             if ((f.flags & FlagArmed) == 0) return true;
             var t = tables;
             if (f.original == null || !t.gatedByTarget.TryGetValue(f.original, out var set) || !set.Contains(__originalMethod)) return true;
-            if (suspended.Contains(__originalMethod)) return true;
+            if (suspended.Contains(__originalMethod) || noted.ContainsKey(__originalMethod)) return true;   // lock-free reads
             System.Threading.Interlocked.Increment(ref GateSkips);
             if (OnFirstGate != null)
             {
@@ -187,36 +208,35 @@ namespace Multiplayer.Client.Patches
 
         // Harmony changed the patches of `original` (any thread; from the UpdateWrapper hook). Until the next pass, a gated postfix
         // is suspended when it now sits on a method without a frame, or when its mod just gave this guarded target a prefix (a pair
-        // that C13Plan would not gate). Patch lists are (owner, method).
+        // that C13Plan would not gate). Patch lists are (owner, method). The original is queued for the next pass in any case.
+        // Harmony 3 stores the new patch state inside UpdateWrapper and holds its patch lock until Patch/Unpatch returns, so a pass
+        // that reads the original after this note sees the new state (facts F16a/F16b).
         public static void NotePatchChange(MethodBase original, IEnumerable<(string owner, MethodBase method)> prefixes,
             IEnumerable<(string owner, MethodBase method)> postfixes)
         {
+            if (original == null || inPass || dropNotesForTest) return;
+            pending[original] = 0;   // first: a note numbered after a pass's start is kept by that pass (see Discover)
             var gated = gatedSnapshot;
-            if (gated.Count == 0 || original == null || postfixes == null) return;
+            if (gated.Count == 0 || postfixes == null) return;
             List<MethodBase> add = null;
             if (!bracketedSnapshot.Contains(original))
             {
                 foreach (var (_, p) in postfixes)
-                    if (p != null && gated.Contains(p) && !suspended.Contains(p)) (add ??= new List<MethodBase>()).Add(p);
+                    if (p != null && gated.Contains(p)) (add ??= new List<MethodBase>()).Add(p);
             }
             else if (tables.gatedByTarget.TryGetValue(original, out var set) && prefixes != null)
             {
                 var prefixOwners = new HashSet<string>(prefixes.Select(x => x.owner));
                 foreach (var (owner, p) in postfixes)
-                    if (p != null && set.Contains(p) && prefixOwners.Contains(owner) && !C13Plan.ReviewedPairs.Contains(p.DeclaringType?.FullName ?? "")
-                        && !suspended.Contains(p))
+                    if (p != null && set.Contains(p) && prefixOwners.Contains(owner) && !C13Plan.ReviewedPairs.Contains(p.DeclaringType?.FullName ?? ""))
                         (add ??= new List<MethodBase>()).Add(p);
             }
             if (add == null) return;
-            lock (suspendLock)
-            {
-                var s = new HashSet<MethodBase>(suspended);
-                s.UnionWith(add);
-                suspended = s;
-            }
+            // always renumbered (never skipped as already suspended): a pass that started before this note must not drop it
+            foreach (var p in add) noted[p] = System.Threading.Interlocked.Increment(ref noteSeq);
         }
 
-        public static int SuspendedCount => suspended.Count;
+        public static int SuspendedCount => suspended.Count + noted.Keys.Count(k => !suspended.Contains(k));
 
         // Safety net, called at a top-level point of the calling thread (OnMainThread.Update): no patched call is open there, so a
         // non-empty stack is a leak. Resetting only drops frames, which can only turn gating off (fail-open), never on.
@@ -249,8 +269,11 @@ namespace Multiplayer.Client.Patches
         }
 
         // targetsOfPostfix: every method that has this postfix method as a postfix (all of them get a frame, so a shared postfix
-        // called by an unguarded target nested inside a guarded call is not gated).
-        public static ApplyResult Apply(List<GuardedTarget> guarded, Func<MethodInfo, IEnumerable<MethodBase>> targetsOfPostfix)
+        // called by an unguarded target nested inside a guarded call is not gated). hasTie: a foreign patch of this target ties
+        // with ours on priority (read with its patch info). notedUpTo: notes numbered up to this were made before the pass read
+        // their originals, so the suspension computed here covers them.
+        internal static ApplyResult Apply(List<GuardedTarget> guarded, Func<MethodInfo, IEnumerable<MethodBase>> targetsOfPostfix,
+            Func<MethodBase, bool> hasTie, long notedUpTo)
         {
             var r = new ApplyResult();
             var h = Harmony;
@@ -360,7 +383,9 @@ namespace Multiplayer.Client.Patches
             var susp = new HashSet<MethodBase>();
             foreach (var p in gatedPostfixMethods.OfType<MethodInfo>())
                 if (targetsOfPostfix(p).Any(o => !bracketed.Contains(o))) susp.Add(p);
-            lock (suspendLock) suspended = susp;
+            suspended = susp;
+            foreach (var kv in noted)
+                if (kv.Value <= notedUpTo) noted.TryRemove(kv);   // only if not renumbered meanwhile
             tables = final;
             gatedSnapshot = new HashSet<MethodBase>(gatedPostfixMethods);
             bracketedSnapshot = new HashSet<MethodBase>(bracketed);
@@ -371,14 +396,8 @@ namespace Multiplayer.Client.Patches
             // 7. priority ties: a foreign int.MaxValue prefix/postfix registered before ours runs before Enter/Arm (its postfix is
             //    then not gated), a foreign int.MinValue finalizer runs after Exit; reported, not fixed
             foreach (var o in final.gatedByTarget.Keys)
-            {
-                var info = Harmony.GetPatchInfo(o);
-                if (info == null) continue;
-                if (info.Prefixes.Any(p => p.owner != C13Plan.GuardOwner && p.priority == int.MaxValue) ||
-                    info.Postfixes.Any(p => p.owner != C13Plan.GuardOwner && p.priority == int.MaxValue) ||
-                    info.Finalizers.Any(p => p.owner != C13Plan.GuardOwner && p.priority == int.MinValue))
-                    r.ties.Add(Name(o));
-            }
+                if (hasTie(o)) r.ties.Add(Name(o));
+            r.ties.Sort(StringComparer.Ordinal);
 
             r.bracketedTotal = bracketed.Count;
             r.hookedTotal = hookedMpPrefixes.Count;
@@ -386,30 +405,56 @@ namespace Multiplayer.Client.Patches
             return r;
         }
 
-        // ---- discovery: scan every patched method, decide (C13Plan), apply ----
+        // ---- discovery: read patched methods, decide (C13Plan), apply ----
 
         public sealed class DiscoverResult
         {
             public List<C13Plan.Decision> decisions = new();
             public ApplyResult apply;
             public string summary;
+            public bool full;          // read every patched method (asked for, or no full pass has succeeded yet)
+            public int changed;        // originals noted since the last pass (all an incremental pass reads)
+            public int read;           // patch infos this pass read
+            public int indexedPostfixes, indexedTargets;   // foreign postfix methods and their originals in the index
         }
 
-        // isSyncTemplate: is this transpiler Multiplayer's SyncTemplates.Transpiler; syncIdOf: Sync internal id of a method or -1
-        public static DiscoverResult Discover(string reason, Func<MethodInfo, bool> isSyncTemplate, Func<MethodBase, int> syncIdOf)
+        // What discovery knows about the patched methods, kept between passes (main thread only). A full pass builds a new one and
+        // swaps it in once every method was read; an incremental pass updates the current one for the noted originals only.
+        sealed class Index
         {
-            var res = new DiscoverResult();
-            var targetsOfPostfix = new Dictionary<MethodInfo, List<MethodBase>>();
-            foreach (var original in Harmony.GetAllPatchedMethods().ToList())
+            public readonly Dictionary<MethodInfo, HashSet<MethodBase>> targetsOfPostfix = new();   // foreign postfix -> originals
+            public readonly Dictionary<MethodBase, HashSet<MethodInfo>> postfixesOf = new();        // original -> its foreign postfixes
+            public readonly Dictionary<MethodBase, C13Plan.Decision> decisions = new();             // originals C13Plan decided on
+            public readonly HashSet<MethodBase> ties = new();                                       // a foreign patch ties with ours
+
+            public IEnumerable<MethodBase> TargetsOf(MethodInfo p) =>
+                targetsOfPostfix.TryGetValue(p, out var s) ? s : Enumerable.Empty<MethodBase>();
+
+            // Replaces what the index holds for one original by its current patch info (null = no patches left).
+            public void Update(MethodBase original, HarmonyLib.Patches info, Func<MethodInfo, bool> isSyncTemplate, Func<MethodBase, int> syncIdOf)
             {
-                var info = Harmony.GetPatchInfo(original);
-                if (info == null) continue;
-                foreach (var p in info.Postfixes)
-                    if (!C13Plan.IsMpFamily(p.owner) && p.PatchMethod != null)
-                    {
-                        if (!targetsOfPostfix.TryGetValue(p.PatchMethod, out var l)) targetsOfPostfix[p.PatchMethod] = l = new List<MethodBase>();
-                        l.Add(original);
-                    }
+                var now = new HashSet<MethodInfo>();
+                if (info != null)
+                    foreach (var p in info.Postfixes)
+                        if (!C13Plan.IsMpFamily(p.owner) && p.PatchMethod != null) now.Add(p.PatchMethod);
+                if (postfixesOf.TryGetValue(original, out var before))
+                    foreach (var p in before)
+                        if (!now.Contains(p) && targetsOfPostfix.TryGetValue(p, out var ts) && ts.Remove(original) && ts.Count == 0)
+                            targetsOfPostfix.Remove(p);
+                foreach (var p in now)
+                {
+                    if (!targetsOfPostfix.TryGetValue(p, out var ts)) targetsOfPostfix[p] = ts = new HashSet<MethodBase>();
+                    ts.Add(original);
+                }
+                if (now.Count > 0) postfixesOf[original] = now; else postfixesOf.Remove(original);
+
+                decisions.Remove(original);
+                ties.Remove(original);
+                if (info == null) return;
+                if (info.Prefixes.Any(p => p.owner != C13Plan.GuardOwner && p.priority == int.MaxValue) ||
+                    info.Postfixes.Any(p => p.owner != C13Plan.GuardOwner && p.priority == int.MaxValue) ||
+                    info.Finalizers.Any(p => p.owner != C13Plan.GuardOwner && p.priority == int.MinValue))
+                    ties.Add(original);
 
                 var t = new C13Plan.TargetEntry
                 {
@@ -424,13 +469,72 @@ namespace Multiplayer.Client.Patches
                 int syncId = t.patches.Any(p => p.isSyncTemplate) ? syncIdOf(original) : -1;
                 t.syncIdKnown = syncId >= 0;
                 var d = C13Plan.Decide(t);
-                if (d == null || d.gated.Count == 0 && d.notGated.Count == 0) continue;
+                if (d == null || d.gated.Count == 0 && d.notGated.Count == 0) return;
                 d.syncId = syncId;
-                res.decisions.Add(d);
+                decisions[original] = d;
             }
+        }
 
+        static Index index = new();
+        static bool fullNeeded = true;   // until a full pass has succeeded (and again while one runs)
+
+        static HarmonyLib.Patches ReadPatchInfo(MethodBase original)
+        {
+            PatchInfoReads++;
+            return patchInfoOf(original);
+        }
+
+        // isSyncTemplate: is this transpiler Multiplayer's SyncTemplates.Transpiler; syncIdOf: Sync internal id of a method or -1.
+        // full: read every patched method (session start); otherwise read only the originals noted since the last pass. A pass
+        // that throws puts its noted originals back (a failed full pass is redone in full), so the retry sees the same changes.
+        public static DiscoverResult Discover(string reason, bool full, Func<MethodInfo, bool> isSyncTemplate, Func<MethodBase, int> syncIdOf)
+        {
+            var res = new DiscoverResult { full = full || fullNeeded };
+            long notedUpTo = System.Threading.Interlocked.Read(ref noteSeq);   // before the drain: NotePatchChange queues, then numbers
+            var batch = new List<MethodBase>();
+            foreach (var o in pending.Keys)
+                if (pending.TryRemove(o, out _)) batch.Add(o);
+            res.changed = batch.Count;
+            long reads = PatchInfoReads;
+            inPass = true;
+            try
+            {
+                if (res.full)
+                {
+                    fullNeeded = true;
+                    var fresh = new Index();
+                    foreach (var original in allPatchedMethods().ToList())
+                        fresh.Update(original, ReadPatchInfo(original), isSyncTemplate, syncIdOf);
+                    index = fresh;
+                }
+                else
+                    foreach (var original in batch)
+                        index.Update(original, ReadPatchInfo(original), isSyncTemplate, syncIdOf);
+                var idx = index;
+                res.decisions = idx.decisions.OrderBy(kv => Key(kv.Key), StringComparer.Ordinal).Select(kv => kv.Value).ToList();
+                res.apply = ApplyDecisions(res.decisions, idx, notedUpTo);
+                if (res.full) fullNeeded = false;
+                res.read = (int)(PatchInfoReads - reads);
+                res.indexedPostfixes = idx.targetsOfPostfix.Count;
+                res.indexedTargets = idx.postfixesOf.Count;
+                res.summary = Summary(reason, res.decisions, res.apply);
+                return res;
+            }
+            catch
+            {
+                foreach (var o in batch) pending.TryAdd(o, 0);
+                throw;
+            }
+            finally
+            {
+                inPass = false;
+            }
+        }
+
+        static ApplyResult ApplyDecisions(List<C13Plan.Decision> decisions, Index idx, long notedUpTo)
+        {
             var guarded = new List<GuardedTarget>();
-            foreach (var d in res.decisions.Where(d => d.Guarded))
+            foreach (var d in decisions.Where(d => d.Guarded))
             {
                 var g = new GuardedTarget { target = (MethodBase)d.target.original };
                 g.gatedPostfixes.AddRange(d.gated.Select(p => (MethodInfo)p.method));
@@ -438,9 +542,7 @@ namespace Multiplayer.Client.Patches
                 if (d.syncChannel) g.syncId = d.syncId;
                 guarded.Add(g);
             }
-            res.apply = Apply(guarded, p => targetsOfPostfix.TryGetValue(p, out var l) ? l : Enumerable.Empty<MethodBase>());
-            res.summary = Summary(reason, res.decisions, res.apply);
-            return res;
+            return Apply(guarded, idx.TargetsOf, idx.ties.Contains, notedUpTo);
         }
 
         static void AddPatches(C13Plan.TargetEntry t, string kind, IEnumerable<HarmonyLib.Patch> patches, Func<MethodInfo, bool> isSyncTemplate)
@@ -489,5 +591,40 @@ namespace Multiplayer.Client.Patches
             m == m_Enter || m == m_Exit || m == m_Arm || m == m_Gate || m == m_MpPrefixResult || m == m_Noop;
 
         public static string Name(MethodBase m) => m == null ? "null" : (m.DeclaringType?.FullName ?? "?") + "::" + m.Name;
+
+        // Name plus parameter types: an order and a key that tell overloads apart
+        static string Key(MethodBase m) => Name(m) + "(" + string.Join(",", m.GetParameters().Select(p => p.ParameterType.Name)) + ")";
+
+        // Everything a pass leaves for the runtime and the next pass, as sorted text (tests: after the same patch changes an
+        // incremental pass must leave exactly what a full pass leaves). Transient notes (noted) are not part of it.
+        internal static string StateDigest()
+        {
+            var sb = new System.Text.StringBuilder();
+            string Set(IEnumerable<MethodBase> s) => string.Join(" ", s.Select(Key).OrderBy(x => x, StringComparer.Ordinal));
+            string Sorted(IEnumerable<string> s) => string.Join(",", s.OrderBy(x => x, StringComparer.Ordinal));
+            IEnumerable<KeyValuePair<K, V>> ByKey<K, V>(Dictionary<K, V> d) where K : MethodBase => d.OrderBy(kv => Key(kv.Key), StringComparer.Ordinal);
+            var t = tables;
+            var idx = index;
+            foreach (var kv in ByKey(t.gatedByTarget)) sb.AppendLine("gated " + Key(kv.Key) + " <- " + Set(kv.Value));
+            foreach (var kv in ByKey(t.targetsByMpPrefix)) sb.AppendLine("mpPrefix " + Key(kv.Key) + " -> " + Set(kv.Value));
+            foreach (var kv in ByKey(t.syncIdByTarget)) sb.AppendLine("syncId " + Key(kv.Key) + " = " + kv.Value);
+            sb.AppendLine("suspended " + Set(suspended));
+            sb.AppendLine("gatedPostfixMethods " + Set(gatedPostfixMethods));
+            sb.AppendLine("hooked " + Set(hookedMpPrefixes));
+            sb.AppendLine("bracketed " + Set(bracketed));
+            sb.AppendLine("armed " + Set(armed));
+            foreach (var kv in ByKey(idx.targetsOfPostfix)) sb.AppendLine("index " + Key(kv.Key) + " -> " + Set(kv.Value));
+            foreach (var kv in ByKey(idx.postfixesOf)) sb.AppendLine("reverse " + Key(kv.Key) + " <- " + Set(kv.Value));
+            foreach (var kv in ByKey(idx.decisions))
+            {
+                var d = kv.Value;
+                sb.AppendLine("decision " + Key(kv.Key) + (d.prefixChannel ? " skip" : "") + (d.syncChannel ? " sync" : "") + " id=" + d.syncId +
+                    " reason=" + d.targetReason + " mp=[" + Sorted(d.mpBoolPrefixes.Select(p => p.name)) + "] gated=[" +
+                    Sorted(d.gated.Select(p => p.owner + ":" + p.name)) + "] not=[" +
+                    Sorted(d.notGated.Select(n => n.patch.owner + ":" + n.patch.name + " (" + n.reason + ")")) + "]");
+            }
+            sb.AppendLine("ties " + Set(idx.ties));
+            return sb.ToString();
+        }
     }
 }
