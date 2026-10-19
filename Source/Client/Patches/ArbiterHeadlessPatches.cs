@@ -88,4 +88,17 @@ namespace Multiplayer.Client
             return false;
         }
     }
+
+    /// A headless instance has no audio: once MusicManagerPlay picks a song (a raid starts combat music),
+    /// ChooseNextSong finds no weighted song ("RandomElementByWeight with totalWeight=0") and PlaySong throws a
+    /// NullReferenceException every frame. 1.7 lab mp89 (FIXES row 122): 153,818 such exceptions, each logged with its stack
+    /// (the arbiter has no log limit), until the arbiter fell behind and timed out on the network during a resync.
+    /// The arbiter plays no music, so its music update is skipped. Applied only to the arbiter and to -headless instances.
+    [HarmonyPatch(typeof(MusicManagerPlay), nameof(MusicManagerPlay.MusicUpdate))]
+    static class ArbiterHeadlessNoMusic
+    {
+        static bool Prepare() => Multiplayer.arbiterInstance || GenCommandLine.CommandLineArgPassed("headless");
+
+        static bool Prefix() => false;
+    }
 }
