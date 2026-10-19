@@ -236,6 +236,7 @@ namespace Multiplayer.Client
 
             TickPatch.Reset();
             VTRSync.Reset();
+            Patches.SimGuards.Clear();   // 1.7 lab: guard frames and the C9 pin never carry over (FIXES row 97)
 
             Find.WindowStack?.WindowOfType<ServerBrowser>()?.Cleanup(true);
             SyncFieldUtil.ClearAllBufferedChanges();

@@ -104,22 +104,25 @@ static class MapContextIncidentParms
 [HarmonyPatch(typeof(IncidentWorker), nameof(IncidentWorker.TryExecute))]
 static class MapContextIncidentExecute
 {
-    static void Prefix(IncidentParms parms, ref Map __state)
+    // prev: an incident executed inside another incident's map context gives the outer context its tickingMap back
+    // (1.7 lab review 19 Oct, FIXES row 97; it was set to null, so the rest of the outer incident lost its map context)
+    static void Prefix(IncidentParms parms, ref (Map map, Map prev) __state)
     {
         if (AsyncWorldTimeComp.tickingWorld && parms.target is Map map)
         {
+            var prev = AsyncTimeComp.tickingMap;
             AsyncTimeComp.tickingMap = map;
             map.AsyncTime().PreContext();
-            __state = map;
+            __state = (map, prev);
         }
     }
 
-    static void Finalizer(Map __state)
+    static void Finalizer((Map map, Map prev) __state)
     {
-        if (__state != null)
+        if (__state.map != null)
         {
-            __state.AsyncTime().PostContext();
-            AsyncTimeComp.tickingMap = null;
+            __state.map.AsyncTime().PostContext();
+            AsyncTimeComp.tickingMap = __state.prev;
         }
     }
 }

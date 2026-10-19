@@ -20,12 +20,12 @@ namespace Multiplayer.Client.Patches
         public static bool InSim => Multiplayer.Client != null && (AsyncWorldTimeComp.tickingWorld || AsyncTimeComp.tickingMap != null || Multiplayer.ExecutingCmds);
         public static bool InTick => InSim && !Multiplayer.ExecutingCmds;
 
-        // C9: a map tick sees the ticking map as Find.CurrentMap (dev switch for A/B in the lab)
+        // C9: a map tick sees the ticking map as Find.CurrentMap (dev switch for A/B in the lab only: it is per PC, so switching it
+        // on one PC of a session splits that session by design)
         [TweakValue("Multiplayer")] public static bool pinMapInMapTicks = true;
+        static bool leakLogged;
 
-        // viewed = the map this PC looked at when the context began, kept as the object: a map tick can remove a map (pocket map,
-        // gravship, caravan leaving), which shifts every index, so an index saved here could name another map afterwards (review 19 Oct)
-        struct Saved { public UnityEngine.Random.State unity; public Map viewed; public bool pinned; public int salt; }
+        struct Saved { public UnityEngine.Random.State unity; public bool pinned; public int salt; }
         static readonly Stack<Saved> stack = new();
         static int systemRandomSalt;
 
@@ -33,54 +33,64 @@ namespace Multiplayer.Client.Patches
         // is in place. Called on every PC at the same point of the simulation.
         public static void Enter(Map map)
         {
-            var g = Current.Game;   // not the CurrentMap getter: it throws on a stale index
-            Map viewedNow = g != null && g.currentMapIndex >= 0 && g.currentMapIndex < g.Maps.Count ? g.Maps[g.currentMapIndex] : null;
-            var s = new Saved { unity = UnityEngine.Random.state, viewed = viewedNow, salt = systemRandomSalt };
+            var s = new Saved { unity = UnityEngine.Random.state, salt = systemRandomSalt };
             // C3: Unity's own generator runs from the synced state for this context, without advancing Verse.Rand; its previous
             // (per-PC) state comes back in Exit, so interface code keeps its own sequence.
             ulong st = Rand.StateCompressed;
             UnityEngine.Random.InitState(Gen.HashCombineInt((int)st, (int)(st >> 32)));
             systemRandomSalt = 0;
-            // C9: in a map TICK (map commands are pinned by AsyncTimeComp.ExecuteCmd already) the ticking map is Find.CurrentMap
+            // C9: in a map TICK (map commands are pinned by AsyncTimeComp.ExecuteCmd already) the ticking map is Find.CurrentMap,
+            // through the world tick's pin (FIXES row 97): it keeps this PC's view, moves off a map that is being removed (also
+            // the ticking map itself) and nests inside a world tick's pin (incidents on a map). Unpinned by the caller after
+            // Rand.PopState, because restoring the view can run UI code.
             if (map != null && pinMapInMapTicks && AsyncTimeComp.tickingMap == map && Current.Game != null && map.Index >= 0)
             {
                 s.pinned = true;
-                Current.Game.currentMapIndex = (sbyte)map.Index;   // the field, like ExecuteCmd: the setter notifies UI and VTRSync
+                WorldCurrentMapPin.PinMap(map);
             }
             stack.Push(s);
         }
 
-        // Start of the matching PostContext (both run in a finally).
-        public static void Exit()
+        // Start of the matching PostContext. True = this context pinned its map: the caller unpins once its synced state is popped.
+        public static bool Exit()
         {
-            if (stack.Count == 0) return;
+            if (stack.Count == 0) return false;
             var s = stack.Pop();
             UnityEngine.Random.state = s.unity;
             systemRandomSalt = s.salt;   // a nested context (quest getters, world-tick incidents) must not reset the outer one's count
-            if (s.pinned && Current.Game != null)
-            {
-                // back to the viewed map by identity; no viewed map (headless arbiter) = -1 as before; if the tick removed the
-                // viewed map, keep what Game.DeinitAndRemoveMap chose (review 19 Oct: a map removing ITSELF in its tick still runs
-                // vanilla's view switch under the pin on every PC - open, to be rebuilt on WorldCurrentMapPin's mechanism)
-                if (s.viewed == null) Current.Game.currentMapIndex = -1;
-                else
-                {
-                    int i = Find.Maps.IndexOf(s.viewed);
-                    if (i >= 0) Current.Game.currentMapIndex = (sbyte)i;
-                    else if (Current.Game.currentMapIndex >= Find.Maps.Count) Current.Game.currentMapIndex = (sbyte)(Find.Maps.Count - 1);
-                }
-            }
+            return s.pinned;
         }
 
-        // True inside a pinned map tick of a map this PC is not looking at: presentation (sounds, camera shake) is skipped there,
-        // as it was when Find.CurrentMap was the viewed map.
-        public static bool TickingAwayFromView
+        // A context that opened and never closed (an exception where a context is closed in a Postfix, or between PreContext and
+        // its try) would leave the guards and the C9 pin on for good: every later frame on the pinned map, later pins no-ops.
+        // Called by TickPatch right before every command and every tick, a point every PC reaches with the same simulation
+        // state, so the repair cannot split PCs (FIXES row 97, review 19 Oct). Nothing is open there in a healthy session.
+        public static void ResetIfLeaked(string where)
         {
-            get
+            if (stack.Count == 0 && !WorldCurrentMapPin.Active) return;
+            if (!leakLogged)
             {
-                if (stack.Count == 0 || !stack.Peek().pinned) return false;
-                return Current.Game == null || stack.Peek().viewed != Current.Game.CurrentMap;
+                leakLogged = true;
+                Log.Error($"Multiplayer sim guards: {stack.Count} guard frame(s) and pin depth {WorldCurrentMapPin.Depth} still open before {where} - reset (logged once)");
             }
+            Saved bottom = default;
+            bool any = stack.Count > 0;
+            while (stack.Count > 0) bottom = stack.Pop();
+            if (any)
+            {
+                UnityEngine.Random.state = bottom.unity;
+                systemRandomSalt = bottom.salt;
+            }
+            WorldCurrentMapPin.ForceReset();
+        }
+
+        // Multiplayer.StopMultiplayer: no guard frame or pin carries over to the next session
+        public static void Clear()
+        {
+            stack.Clear();
+            systemRandomSalt = 0;
+            leakLogged = false;
+            WorldCurrentMapPin.Clear();
         }
 
         public static int NextSystemRandomSeed()
@@ -188,19 +198,17 @@ namespace Multiplayer.Client.Patches
         }
     }
 
-    // C9 presentation: with the ticking map pinned, one-shot sounds and camera shake of a map this PC is not viewing are skipped,
-    // as before the pin (they are presentation only; Multiplayer already isolates the Rand of sound methods).
+    // C9 presentation: camera shake has no map of its own (callers gate it on Find.CurrentMap), so inside a pin on a map this PC
+    // is not viewing it is skipped, as before the pin. Sounds get this PC's view in their map checks (WorldCurrentMapPinViewPatch).
     [HarmonyPatch]
     static class SimGuardPresentationAway
     {
         static IEnumerable<System.Reflection.MethodBase> TargetMethods()
         {
-            yield return AccessTools.Method(typeof(SoundStarter), nameof(SoundStarter.PlayOneShot));
-            yield return AccessTools.Method(typeof(SoundStarter), nameof(SoundStarter.PlayOneShotOnCamera));   // compares onlyThisMap with Find.CurrentMap
             yield return AccessTools.Method(typeof(CameraShaker), nameof(CameraShaker.DoShake), new[] { typeof(float) });
             yield return AccessTools.Method(typeof(CameraShaker), nameof(CameraShaker.DoShake), new[] { typeof(float), typeof(int) });
         }
 
-        static bool Prefix() => !SimGuards.TickingAwayFromView;
+        static bool Prefix() => !WorldCurrentMapPin.PinnedAwayFromView;
     }
 }

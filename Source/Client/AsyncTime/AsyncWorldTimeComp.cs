@@ -138,6 +138,7 @@ public class AsyncWorldTimeComp : IExposable, ITickable
             tickingWorld = false;
 
             Multiplayer.game.sync.TryAddWorldRandomState(randState);
+            WorldCurrentMapPin.FlushViewSwitch();
         }
     }
 
@@ -176,7 +177,7 @@ public class AsyncWorldTimeComp : IExposable, ITickable
         finally
         {
             Patches.SimGuards.Exit();
-            // After the world's random state is popped: restoring a removed view runs UI code
+            // After the world's random state is popped; a removed view switches later, in FlushViewSwitch (FIXES row 97)
             WorldCurrentMapPin.Unpin();
         }
     }
@@ -281,6 +282,7 @@ public class AsyncWorldTimeComp : IExposable, ITickable
             TickPatch.currentExecutingCmdType = null;
 
             Multiplayer.game.sync.TryAddCommandRandomState(randState);
+            WorldCurrentMapPin.FlushViewSwitch();
 
             if (cmdType != CommandType.GlobalTimeSpeed)
                 Multiplayer.ReaderLog.AddCurrentNode(data);

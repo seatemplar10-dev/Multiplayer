@@ -178,6 +178,7 @@ namespace Multiplayer.Client
                     // Minimal code impact fix for #733. Having all the commands be added to a single queue gets rid of
                     // the out-of-order execution problem. With a proper fix, this can be reverted to tickable.ExecuteCmd
                     var target = TickableById(cmd.mapId);
+                    Patches.SimGuards.ResetIfLeaked("a command");   // 1.7 lab, FIXES row 97: same point on every PC
                     if (target == null)
                     {
                         Log.Error($"!!! Tickable of {cmd.mapId} not found! {cmd}");
@@ -217,6 +218,7 @@ namespace Multiplayer.Client
         public static bool DoTick(ref bool worked)
         {
             tickTimer.Restart();
+            Patches.SimGuards.ResetIfLeaked("a tick");   // 1.7 lab, FIXES row 97: same point on every PC
 
             foreach (ITickable tickable in AllTickables)
             {

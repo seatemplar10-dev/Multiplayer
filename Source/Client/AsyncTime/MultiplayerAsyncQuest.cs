@@ -95,7 +95,9 @@ namespace Multiplayer.Client.Comp
             __state?.PreContext();
         }
 
-        static void Postfix(AsyncTimeComp __state) => __state?.PostContext();
+        // Finalizer, not Postfix: an exception in the original would skip a Postfix and leave the map context open
+        // (Rand pushed, faction pushed, sim guards / C9 pin on; review 19 Oct, FIXES row 97)
+        static void Finalizer(AsyncTimeComp __state) => __state?.PostContext();
     }
 
     [HarmonyPatch(typeof(Quest), nameof(Quest.Accept))]
@@ -112,7 +114,9 @@ namespace Multiplayer.Client.Comp
             __state?.PreContext();
         }
 
-        static void Postfix(AsyncTimeComp __state) => __state?.PostContext();
+        // Finalizer, not Postfix: an exception in the original would skip a Postfix and leave the map context open
+        // (Rand pushed, faction pushed, sim guards / C9 pin on; review 19 Oct, FIXES row 97)
+        static void Finalizer(AsyncTimeComp __state) => __state?.PostContext();
     }
 
     [HarmonyPatch(typeof(Quest), nameof(Quest.End))]

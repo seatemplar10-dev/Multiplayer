@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using HarmonyLib;
+using Multiplayer.Client.AsyncTime;
 using Multiplayer.Client.Comp;
 using Multiplayer.Client.Factions;
 using Multiplayer.Client.Patches;
@@ -152,6 +153,7 @@ namespace Multiplayer.Client
                 Multiplayer.game.sync.TryAddMapRandomState(map.uniqueID, randState);
                 eventCount++;
                 tickingMap = null;
+                WorldCurrentMapPin.FlushViewSwitch();
 
                 //SimpleProfiler.Pause();
             }
@@ -198,13 +200,22 @@ namespace Multiplayer.Client
 
         public void PostContext()
         {
-            Patches.SimGuards.Exit();
-            prevTime?.Set();
+            bool unpin = Patches.SimGuards.Exit();
+            try
+            {
+                prevTime?.Set();
 
-            randState = Rand.StateCompressed;
-            Rand.PopState();
+                randState = Rand.StateCompressed;
+                Rand.PopState();
 
-            map.PopFaction();
+                map.PopFaction();
+            }
+            finally
+            {
+                // C9 (FIXES row 97): after the map's random state and faction, like AsyncWorldTimeComp.PostContext
+                if (unpin)
+                    WorldCurrentMapPin.Unpin();
+            }
         }
 
         public void ExposeData()
