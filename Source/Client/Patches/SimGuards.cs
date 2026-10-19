@@ -23,7 +23,9 @@ namespace Multiplayer.Client.Patches
         // C9: a map tick sees the ticking map as Find.CurrentMap (dev switch for A/B in the lab)
         [TweakValue("Multiplayer")] public static bool pinMapInMapTicks = true;
 
-        struct Saved { public UnityEngine.Random.State unity; public sbyte mapIndex; public bool pinned; }
+        // viewed = the map this PC looked at when the context began, kept as the object: a map tick can remove a map (pocket map,
+        // gravship, caravan leaving), which shifts every index, so an index saved here could name another map afterwards (review 19 Oct)
+        struct Saved { public UnityEngine.Random.State unity; public Map viewed; public bool pinned; public int salt; }
         static readonly Stack<Saved> stack = new();
         static int systemRandomSalt;
 
@@ -31,7 +33,9 @@ namespace Multiplayer.Client.Patches
         // is in place. Called on every PC at the same point of the simulation.
         public static void Enter(Map map)
         {
-            var s = new Saved { unity = UnityEngine.Random.state, mapIndex = (sbyte)(Current.Game?.currentMapIndex ?? -1) };
+            var g = Current.Game;   // not the CurrentMap getter: it throws on a stale index
+            Map viewedNow = g != null && g.currentMapIndex >= 0 && g.currentMapIndex < g.Maps.Count ? g.Maps[g.currentMapIndex] : null;
+            var s = new Saved { unity = UnityEngine.Random.state, viewed = viewedNow, salt = systemRandomSalt };
             // C3: Unity's own generator runs from the synced state for this context, without advancing Verse.Rand; its previous
             // (per-PC) state comes back in Exit, so interface code keeps its own sequence.
             ulong st = Rand.StateCompressed;
@@ -52,7 +56,20 @@ namespace Multiplayer.Client.Patches
             if (stack.Count == 0) return;
             var s = stack.Pop();
             UnityEngine.Random.state = s.unity;
-            if (s.pinned && Current.Game != null) Current.Game.currentMapIndex = s.mapIndex;
+            systemRandomSalt = s.salt;   // a nested context (quest getters, world-tick incidents) must not reset the outer one's count
+            if (s.pinned && Current.Game != null)
+            {
+                // back to the viewed map by identity; no viewed map (headless arbiter) = -1 as before; if the tick removed the
+                // viewed map, keep what Game.DeinitAndRemoveMap chose (review 19 Oct: a map removing ITSELF in its tick still runs
+                // vanilla's view switch under the pin on every PC - open, to be rebuilt on WorldCurrentMapPin's mechanism)
+                if (s.viewed == null) Current.Game.currentMapIndex = -1;
+                else
+                {
+                    int i = Find.Maps.IndexOf(s.viewed);
+                    if (i >= 0) Current.Game.currentMapIndex = (sbyte)i;
+                    else if (Current.Game.currentMapIndex >= Find.Maps.Count) Current.Game.currentMapIndex = (sbyte)(Find.Maps.Count - 1);
+                }
+            }
         }
 
         // True inside a pinned map tick of a map this PC is not looking at: presentation (sounds, camera shake) is skipped there,
@@ -62,7 +79,7 @@ namespace Multiplayer.Client.Patches
             get
             {
                 if (stack.Count == 0 || !stack.Peek().pinned) return false;
-                return Current.Game == null || stack.Peek().mapIndex != Current.Game.currentMapIndex;
+                return Current.Game == null || stack.Peek().viewed != Current.Game.CurrentMap;
             }
         }
 
