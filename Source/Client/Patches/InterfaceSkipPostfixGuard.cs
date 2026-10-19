@@ -22,6 +22,16 @@ namespace Multiplayer.Client.Patches
         [TweakValue("Multiplayer")] public static bool enabled = true;
         [TweakValue("Multiplayer")] public static bool logFirstGate = true;
 
+        // Lab switch (FIXES rows 114, 121): -mplabnoc13 leaves the guard out entirely (nothing is patched). 19 Oct replays rp43/rp44:
+        // some mod patches at runtime, every pass rescans all ~7,400 patched methods, and the main thread spent its frames in
+        // Discover (the simulation crawled to ~40 ticks a minute). ArbiterLauncher passes the switch on to the arbiter.
+        public const string OffArg = "mplabnoc13";
+        public static readonly bool Off = GenCommandLine.CommandLineArgPassed(OffArg);
+
+        // Who changes patches after the session start (the rescan trigger): the first 20, logged from the main thread
+        static readonly System.Collections.Concurrent.ConcurrentQueue<string> changes = new();
+        static int changesSeen;
+
         static volatile bool dirty, applying;
         static bool started, initDone, leakLogged, callerLogged;
         static int applyingThread = -1, failures;
@@ -31,6 +41,11 @@ namespace Multiplayer.Client.Patches
 
         public static void OnSessionStart()
         {
+            if (Off)
+            {
+                Log.Warning($"Multiplayer: -{OffArg}: C13 postfix guard (FIXES row 114) NOT applied - lab switch");
+                return;
+            }
             started = true;
             Discover("session start");
         }
@@ -49,6 +64,8 @@ namespace Multiplayer.Client.Patches
                 callerLogged = true;
                 Log.Warning("MP C13 postfix guard: a stack walk could not name the caller of a Multiplayer prefix skip; the innermost call frame was used (logged once)");
             }
+            while (changes.TryDequeue(out var change))
+                Log.Message("MP C13 postfix guard: patches changed after the session start: " + change);
             if (!dirty || !started || applying) return;
             if (LongEventHandler.currentEvent != null) return;   // patch only between long events (loading can run off the main thread)
             if (Multiplayer.clock.ElapsedMilliseconds - lastScanMs < RescanIntervalMs) return;
@@ -77,6 +94,17 @@ namespace Multiplayer.Client.Patches
         {
             if (applying && Environment.CurrentManagedThreadId == applyingThread) return;
             dirty = true;
+            if (started && System.Threading.Interlocked.Increment(ref changesSeen) <= 20)
+            {
+                try
+                {
+                    var frames = new System.Diagnostics.StackTrace(1, false).GetFrames();
+                    var by = string.Join(" < ", frames.Select(f => f.GetMethod()).Where(m => m != null && m.DeclaringType?.Namespace?.StartsWith("HarmonyLib") != true)
+                        .Take(5).Select(m => m.DeclaringType?.Name + "." + m.Name));
+                    changes.Enqueue(C13Core.Name(original) + " by " + by);
+                }
+                catch { }
+            }
             try
             {
                 C13Core.NotePatchChange(original,
