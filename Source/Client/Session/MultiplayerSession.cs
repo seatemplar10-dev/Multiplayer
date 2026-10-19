@@ -57,6 +57,12 @@ namespace Multiplayer.Client
         public AutosaveUnit autosaveUnit;
         public bool ConnectedToStandaloneServer => client != null && isStandaloneServer;
 
+        // Every session (host, joiner, arbiter, replay) starts here, before a joiner loads the game: C13 discovery (FIXES row 114)
+        public MultiplayerSession()
+        {
+            Patches.InterfaceSkipPostfixGuard.OnSessionStart();
+        }
+
         public void Stop()
         {
             if (client != null)

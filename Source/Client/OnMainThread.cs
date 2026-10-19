@@ -31,6 +31,7 @@ namespace Multiplayer.Client
 
             if (Multiplayer.Client == null) return;
 
+            Patches.InterfaceSkipPostfixGuard.Update();   // C13: rescan after later Harmony patches (FIXES row 114)
             Multiplayer.session.Update();
             SyncFieldUtil.UpdateSync();
 

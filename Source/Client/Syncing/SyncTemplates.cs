@@ -17,6 +17,7 @@ namespace Multiplayer.Client
         {
             if (Multiplayer.ShouldSync) {
                 Sync.internalIdToSyncMethod[internalId].DoSync(instance, args);
+                Patches.C13Core.OnSyncIntercepted(internalId);   // C13: other mods' postfixes of this call wait for the command
                 return false;
             }
 
