@@ -151,6 +151,12 @@ namespace Multiplayer.Client
             {
                 PostContext();
                 Multiplayer.game.sync.TryAddMapRandomState(map.uniqueID, randState);
+
+                // FIXES row 113 item 3: a list order split is a desync at the checkpoint after it starts
+                if (ListOrderHash.IsCheckpoint(mapTicks))
+                    Multiplayer.game.sync.TryAddListCheckpoint(map.uniqueID, mapTicks, map.listerThings.AllThings,
+                        tickListNormal, tickListRare, tickListLong);
+
                 eventCount++;
                 tickingMap = null;
                 WorldCurrentMapPin.FlushViewSwitch();

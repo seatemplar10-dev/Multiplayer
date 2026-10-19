@@ -103,9 +103,16 @@ public record struct MapRandomState : IPacketBufferable
     public int mapId;
     public List<uint> randomStates;
 
+    // FIXES row 113 item 3: order and content hashes of the map's shared lists (ListOrderHash), protocol 58+
+    public List<ListHash> listHashes;
+
     public void Bind(PacketBuffer buf)
     {
         buf.Bind(ref mapId);
         buf.Bind(ref randomStates, BinderOf.UInt());
+
+        // Written as an empty list when no checkpoint fell into the window. Same bytes as ListHash.WriteList.
+        if (buf.isWriting) listHashes ??= [];
+        buf.Bind(ref listHashes, BinderOf.Identity<ListHash>(), maxLength: ListHash.MaxPerMap);
     }
 }

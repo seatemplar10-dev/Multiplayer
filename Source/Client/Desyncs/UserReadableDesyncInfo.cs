@@ -125,6 +125,19 @@ namespace Multiplayer.Client
                         if (!equal)
                             for (int j = 0; j < Math.Min(localMap.Count, remoteMap.Count); j++)
                                 text.AppendLine($"{localMap[j]} {remoteMap[j]} {(localMap[j] != remoteMap[j] ? "x" : "")}");
+
+                        // FIXES row 113 item 3: list order/content checkpoints
+                        var localLists = local.mapStates[i].listHashes;
+                        var remoteLists = remote.mapStates[i].listHashes;
+                        var listSplit = ListOrderHash.FirstDifference(localLists, remoteLists, "local", "remote");
+                        text.AppendLine($"Map {local.mapStates[i].mapId} lists ({localLists?.Count ?? 0} local / " +
+                                        $"{remoteLists?.Count ?? 0} remote checkpoint entries): {listSplit ?? "equal"}");
+                        if (listSplit != null && localLists != null && remoteLists != null)
+                            for (int j = 0; j < Math.Min(localLists.Count, remoteLists.Count); j++)
+                                text.AppendLine($"{localLists[j].mapTick} {ListOrderHash.Name(localLists[j].list)} " +
+                                                $"{localLists[j].count}/{localLists[j].orderHash:x16}/{localLists[j].contentHash:x16} " +
+                                                $"{remoteLists[j].count}/{remoteLists[j].orderHash:x16}/{remoteLists[j].contentHash:x16} " +
+                                                $"{(localLists[j] != remoteLists[j] ? "x" : "")}");
                     }
 
                     text.AppendLine($"World: {local.worldRandomStates.SequenceEqual(remote.worldRandomStates)}");
@@ -195,6 +208,7 @@ namespace Multiplayer.Client
             builder.AppendLine($"Was simulating: {sync.simulating}");
             builder.AppendLine($"Map count: {sync.mapStates.Count}");
             builder.AppendLine($"Last map state: {sync.mapStates.Select(m => $"{m.mapId}/{m.randomStates.LastOrDefault()}/{m.randomStates.Count}").ToStringSafeEnumerable()}");
+            builder.AppendLine($"List checkpoint entries: {sync.mapStates.Select(m => $"{m.mapId}/{m.listHashes?.Count ?? 0}").ToStringSafeEnumerable()}");
             builder.AppendLine($"Last world state: {sync.worldRandomStates.LastOrDefault()}/{sync.worldRandomStates.Count}");
             builder.AppendLine($"Last cmd state: {sync.commandRandomStates.LastOrDefault()}/{sync.commandRandomStates.Count}");
             builder.AppendLine($"Trace hashes: {sync.desyncStackTraceHashes.Count}");

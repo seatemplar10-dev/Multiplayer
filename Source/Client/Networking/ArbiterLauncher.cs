@@ -148,6 +148,9 @@ namespace Multiplayer.Client.Networking
                 psi.ArgumentList.Add($"-{DeferredStackTracing.TraceModeArg}={Multiplayer.settings.desyncTracingMode}");
             if (DeferredStackTracing.HashManagedFrames)
                 psi.ArgumentList.Add("-" + DeferredStackTracing.TraceFrameHashArg);
+            // Lab mutation test: the arbiter runs without the list order guard too (FIXES row 113)
+            if (global::Multiplayer.Client.Patches.ListerThingsKeepOrder.Off)
+                psi.ArgumentList.Add("-" + global::Multiplayer.Client.Patches.ListerThingsKeepOrder.OffArg);
 
             psi.RedirectStandardOutput = true;
             psi.RedirectStandardError = true;

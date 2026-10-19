@@ -20,10 +20,23 @@ namespace Multiplayer.Client.Patches
         // 4981 calls RemoveSwap twice in Remove (listsByDef, each group list). Builds before 4981 have no RemoveSwap.
         const int ExpectedCalls = 2;
 
+        // Lab mutation test (FIXES row 113 items 3 + 5): -mplabnoc12 leaves this guard out (vanilla swap-removal), so the
+        // live list checkpoints (ListOrderHash) must report the split. ArbiterLauncher passes it on to the arbiter.
+        public const string OffArg = "mplabnoc12";
+        public static readonly bool Off = GenCommandLine.CommandLineArgPassed(OffArg);
+        static bool offLogged;
+
         static bool Prepare()
         {
             if (RemoveSwap == null)
                 Log.Message("Multiplayer: ListerThings has no RemoveSwap (a build before 1.7.4981) - list order guard not needed");
+            else if (Off)
+            {
+                if (!offLogged)
+                    Log.Warning($"Multiplayer: -{OffArg}: list order guard (FIXES row 112, C12) NOT applied - lab mutation test");
+                offLogged = true;
+                return false;
+            }
             return RemoveSwap != null;
         }
 

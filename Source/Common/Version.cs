@@ -6,7 +6,9 @@ namespace Multiplayer.Common
     public static class MpVersion
     {
         public const string SimpleVersion = "0.11.5";
-        public const int Protocol = 57; // 57: ClientInitDataPacket.ModData.configs is a list (was one optional config)
+        // 57: ClientInitDataPacket.ModData.configs is a list (was one optional config)
+        // 58: sync opinions carry list order/content checkpoints per map (MapRandomState.listHashes, FIXES row 113)
+        public const int Protocol = 58;
 
         public static readonly string? GitHash = Assembly.GetExecutingAssembly()
             .GetCustomAttributes<AssemblyMetadataAttribute>()

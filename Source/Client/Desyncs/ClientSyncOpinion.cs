@@ -49,8 +49,17 @@ namespace Multiplayer.Client
                      join map2 in other.mapStates on map1.mapId equals map2.mapId
                      select (map1, map2))
             {
+                // FIXES row 113 item 3: a shared list split (same things in another order, or different things) while
+                // the random states still match is named by itself; with a random state difference it is added to that
+                var listSplit = ListOrderHash.FirstDifference(g.map1.listHashes, g.map2.listHashes, SideName,
+                    other.SideName);
+
                 if (!g.map1.randomStates.SequenceEqual(g.map2.randomStates))
-                    return $"Wrong random state on map {g.map1.mapId}";
+                    return $"Wrong random state on map {g.map1.mapId}" +
+                           (listSplit != null ? $"; shared list split too, {listSplit}" : "");
+
+                if (listSplit != null)
+                    return $"Shared list split on map {g.map1.mapId} {listSplit}";
             }
 
             if (!worldRandomStates.SequenceEqual(other.worldRandomStates))
@@ -65,12 +74,16 @@ namespace Multiplayer.Client
             return null;
         }
 
-        public List<uint> GetRandomStatesForMap(int mapId)
+        private string SideName => isLocalClientsOpinion ? "local" : "remote";
+
+        public List<uint> GetRandomStatesForMap(int mapId) => GetMapData(mapId).randomStates;
+
+        public MapRandomStateData GetMapData(int mapId)
         {
             var result = mapStates.Find(m => m.mapId == mapId);
-            if (result != null) return result.randomStates;
+            if (result != null) return result;
             mapStates.Add(result = new MapRandomStateData(mapId));
-            return result.randomStates;
+            return result;
         }
 
         public byte[] Serialize()
@@ -86,6 +99,7 @@ namespace Multiplayer.Client
             {
                 writer.WriteInt32(map.mapId);
                 writer.WritePrefixedUInts(map.randomStates);
+                ListHash.WriteList(writer, map.listHashes); // same bytes as MapRandomState.Bind (protocol 58)
             }
 
             writer.WritePrefixedInts(desyncStackTraceHashes);
@@ -100,7 +114,7 @@ namespace Multiplayer.Client
             commandRandomStates = sync.commandRandomStates,
             worldRandomStates = sync.worldRandomStates,
             mapStates = sync.mapRandomStates.Select(state => new MapRandomStateData(state.mapId)
-                { randomStates = state.randomStates }).ToList(),
+                { randomStates = state.randomStates, listHashes = state.listHashes }).ToList(),
             desyncStackTraceHashes = sync.traceHashes,
             simulating = sync.simulating,
             roundMode = sync.roundMode
@@ -112,7 +126,7 @@ namespace Multiplayer.Client
             commandRandomStates = commandRandomStates,
             worldRandomStates = worldRandomStates,
             mapRandomStates = mapStates.Select(state => new MapRandomState
-                { mapId = state.mapId, randomStates = state.randomStates }).ToList(),
+                { mapId = state.mapId, randomStates = state.randomStates, listHashes = state.listHashes }).ToList(),
             traceHashes = desyncStackTraceHashes,
             simulating = simulating,
             roundMode = roundMode
@@ -131,7 +145,8 @@ namespace Multiplayer.Client
             {
                 int mapId = data.ReadInt32();
                 var mapData = new List<uint>(data.ReadPrefixedUInts());
-                maps.Add(new MapRandomStateData(mapId) { randomStates = mapData });
+                var listHashes = ListHash.ReadList(data);
+                maps.Add(new MapRandomStateData(mapId) { randomStates = mapData, listHashes = listHashes });
             }
 
             var traceHashes = new List<int>(data.ReadPrefixedInts());

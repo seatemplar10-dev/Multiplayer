@@ -138,8 +138,20 @@ public class PacketTest
             worldRandomStates = [10, 20, 30],
             mapRandomStates =
             [
-                new MapRandomState { mapId = 1, randomStates = [111, 222] },
-                new MapRandomState { mapId = 2, randomStates = [333, 444, 555] }
+                new MapRandomState
+                {
+                    mapId = 1, randomStates = [111, 222],
+                    // Protocol 58 (FIXES row 113): one list checkpoint entry
+                    listHashes =
+                    [
+                        new ListHash
+                        {
+                            mapTick = 60, list = SyncedList.TickRare, count = 3,
+                            orderHash = 0x0123456789ABCDEF, contentHash = 0xFEDCBA9876543210
+                        }
+                    ]
+                },
+                new MapRandomState { mapId = 2, randomStates = [333, 444, 555], listHashes = [] }
             ],
             traceHashes = [999, 888, 777],
             simulating = true,

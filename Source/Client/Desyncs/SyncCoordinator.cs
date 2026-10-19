@@ -30,6 +30,7 @@ namespace Multiplayer.Client
         public bool arbiterWasPlayingOnLastValidTick;
         private int checksPassed;
         private int cappedOpinions;
+        private long listEntriesCompared; // FIXES row 113: shows in the "sync check passed" line that checkpoints are compared
 
         private const int MaxBacklog = 30;
 
@@ -133,13 +134,16 @@ namespace Multiplayer.Client
 
                 // A line now and then, so a soak's log shows the checks run and carry traces
                 checksPassed++;
+                foreach (var map in oldOpinion.mapStates)
+                    listEntriesCompared += map.listHashes?.Count ?? 0;
                 if (checksPassed == 1 || checksPassed % 100 == 0)
                 {
                     var localOpinion = oldOpinion.isLocalClientsOpinion ? oldOpinion : newOpinion;
                     var remoteOpinion = oldOpinion.isLocalClientsOpinion ? newOpinion : oldOpinion;
                     Log.Message($"Multiplayer: sync check {checksPassed} passed (opinion start tick {oldOpinion.startTick}, " +
                                 $"trace hashes local {localOpinion.desyncStackTraceHashes.Count} / remote " +
-                                $"{remoteOpinion.desyncStackTraceHashes.Count}, arbiter playing {Multiplayer.session.ArbiterPlaying})");
+                                $"{remoteOpinion.desyncStackTraceHashes.Count}, arbiter playing {Multiplayer.session.ArbiterPlaying}, " +
+                                $"list checkpoint entries compared so far {listEntriesCompared})");
                 }
 
                 // Return inner data to the pool
@@ -227,6 +231,20 @@ namespace Multiplayer.Client
             if (!ShouldCollect) return;
             OpinionInBuilding.TryMarkSimulating();
             OpinionInBuilding.GetRandomStatesForMap(map).Add((uint) (state >> 32));
+        }
+
+        /// <summary>
+        /// FIXES row 113 item 3: order and content hashes of the map's listerThings.AllThings and its three tick lists,
+        /// motes excluded (<see cref="ListCheckpoint"/>). AsyncTimeComp.Tick calls it right after the map's random state,
+        /// at map ticks where <see cref="ListOrderHash.IsCheckpoint"/> is true.
+        /// </summary>
+        public void TryAddListCheckpoint(int map, int mapTick, List<Thing> allThings, TickList normal, TickList rare,
+            TickList longList)
+        {
+            if (!ShouldCollect) return;
+            OpinionInBuilding.TryMarkSimulating();
+            var data = OpinionInBuilding.GetMapData(map);
+            ListCheckpoint.Take(data.listHashes ??= new List<ListHash>(4), mapTick, allThings, normal, rare, longList);
         }
 
         /// <summary>
