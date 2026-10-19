@@ -16,6 +16,9 @@ namespace Multiplayer.Client.AsyncTime;
 // commands and the long events the simulation queues therefore pin it to a map every client has. Map commands pin their own
 // map (AsyncTimeComp.ExecuteCmd). 1.7 lab (FIXES rows 87, 97): a map tick pins its own map through PinMap (SimGuards C9).
 // Presentation that asks "is this the map I am looking at" (sounds, camera shake) still gets this client's view.
+// FIXES row 118: the outermost restore puts back the view it found, also "no map". A load from a multifaction snapshot has
+// no current map (SaveLoad.CreateGameDataSnapshot drops currentMapIndex, AllowCurrentMapNullWhenLoading keeps it null), so a
+// rejoiner would sit on the world view for good; Loader.PostLoad gives it its view back (RestoreViewAfterLoad).
 public static class WorldCurrentMapPin
 {
     private static int depth;
@@ -31,6 +34,13 @@ public static class WorldCurrentMapPin
     private static int viewScope;
     // The simulation removed the map this client was viewing; the view switches once the context is over (FlushViewSwitch)
     private static Game viewSwitchPending;
+    // FIXES row 118: uniqueID of the map this client viewed before a load that replaces the Game (-1 = none recorded)
+    private static int viewToRestoreId = -1;
+    // FIXES row 118 diagnostic: restores that left this client without a view while maps exist (per PC, logging only)
+    private static readonly System.Diagnostics.Stopwatch noViewClock = System.Diagnostics.Stopwatch.StartNew();
+    private static bool noViewStretch;
+    private static long noViewLoggedAt;
+    private static int noViewCount;
 
     public static bool Active => depth > 0;
     public static int Depth => depth;
@@ -84,7 +94,15 @@ public static class WorldCurrentMapPin
 
     public static void Unpin()
     {
-        if (depth == 0) return;
+        var g = game;
+        if (UnpinCore())
+            NoteViewAfterRestore(g, "Unpin");
+    }
+
+    // True when this call was the outermost level and restored this client's view
+    private static bool UnpinCore()
+    {
+        if (depth == 0) return false;
 
         if (--depth > 0)
         {
@@ -94,7 +112,7 @@ public static class WorldCurrentMapPin
             outerMapLevels.RemoveAt(outerMapLevels.Count - 1);
             if (game != null && game == Current.Game)
                 game.currentMapIndex = IndexIn(game, pinnedMap);
-            return;
+            return false;
         }
 
         var g = game;
@@ -108,18 +126,19 @@ public static class WorldCurrentMapPin
         viewScope = 0;
 
         // A reload replaced the Game: the new one keeps its own current map
-        if (g == null || g != Current.Game) return;
+        if (g == null || g != Current.Game) return false;
 
         if (restore == null || g.Maps.Contains(restore))
         {
             g.currentMapIndex = IndexIn(g, restore);
-            return;
+            return true;
         }
 
         // The simulation removed the map this client was viewing. Game.DeinitAndRemoveMap would switch the view; here the
         // switch waits for the end of the tick or command: it runs UI code and VTRSync sends a command from this client.
         g.currentMapIndex = -1;
         viewSwitchPending = g;
+        return true;
     }
 
     // What Game.DeinitAndRemoveMap does for the viewer of a removed map, from "no map", so VTRSync does not count a leave
@@ -148,10 +167,71 @@ public static class WorldCurrentMapPin
     // Leak repair (SimGuards.ResetIfLeaked): unwinds every level, restoring this client's view as the outermost Unpin does
     internal static void ForceReset()
     {
+        var g = game;
+        bool restored = false;
         while (depth > 0)
-            Unpin();
+            restored |= UnpinCore();
         viewScope = 0;
         FlushViewSwitch();
+        if (restored)
+            NoteViewAfterRestore(g, "ForceReset");
+    }
+
+    // FIXES row 118 diagnostic: the outermost restore left this client viewing no map while maps exist (expected only on a
+    // headless arbiter or a multifaction spectator who has not picked a faction). Said when such a stretch starts, then at
+    // most every 5 min while it lasts; reads and logs only, so it cannot change the simulation.
+    private static void NoteViewAfterRestore(Game g, string where)
+    {
+        if (g == null || g != Current.Game || g.Maps.Count == 0 || viewSwitchPending == g) return;
+        if (g.currentMapIndex >= 0)
+        {
+            noViewStretch = false;
+            return;
+        }
+
+        noViewCount++;
+        long now = noViewClock.ElapsedMilliseconds;
+        if (noViewStretch && now - noViewLoggedAt < 300_000) return;
+        noViewStretch = true;
+        noViewLoggedAt = now;
+        Log.Warning($"Multiplayer: the map pin's outermost {where} left Game.currentMapIndex at -1 while {g.Maps.Count} map(s) exist, this PC views no map ({noViewCount} such restore(s) in this session; FIXES row 118)");
+    }
+
+    // FIXES row 118: before a load that replaces the Game (Rejoiner.DoRejoin, Loader.ReloadGame) remember this client's own
+    // view; inside a pin that is the view the pin keeps, not the pinned map. Without a view the last record stays.
+    public static void RememberViewForReload()
+    {
+        var g = Current.Game;
+        if (g == null) return;
+        var view = depth > 0 && game == g ? viewedMap : MapAt(g, g.currentMapIndex);
+        if (view != null)
+            viewToRestoreId = view.uniqueID;
+    }
+
+    public static void ForgetViewForReload() => viewToRestoreId = -1;
+
+    // FIXES row 118, Loader.PostLoad (outside any context): a load that chose a map keeps it. A load that chose none (every
+    // multifaction snapshot) gives this client the map it viewed before the reload if that map still exists, else the first
+    // home map of its own faction; a spectator (a multifaction joiner who has not picked a faction, the arbiter) keeps the
+    // world view, as before. Through the setter, as a player's own map switch: map UI, ambient sound, VTRSync's player count.
+    public static void RestoreViewAfterLoad(Faction myFaction, Faction spectatorFaction)
+    {
+        int id = viewToRestoreId;
+        viewToRestoreId = -1;
+
+        var g = Current.Game;
+        if (g == null || g.Maps.Count == 0) return;
+        var viewNow = depth > 0 && game == g ? viewedMap : MapAt(g, g.currentMapIndex);
+        if (viewNow != null) return;
+
+        Map map = null;
+        if (id >= 0)
+            map = g.Maps.Find(m => m.uniqueID == id);
+        if (map == null && myFaction != null && myFaction != spectatorFaction && myFaction.IsPlayer)
+            map = g.Maps.Find(m => m.ParentFaction == myFaction && !m.IsPocketMap) ?? g.Maps.Find(m => m.ParentFaction == myFaction);
+        if (map == null) return;
+
+        g.CurrentMap = map;
     }
 
     // A new session: nothing from the last one may survive (Multiplayer.StopMultiplayer)
@@ -166,6 +246,9 @@ public static class WorldCurrentMapPin
         outerMapLevels.Clear();
         viewScope = 0;
         viewSwitchPending = null;
+        viewToRestoreId = -1;
+        noViewStretch = false;
+        noViewCount = 0;
     }
 
     // The first player colony in Find.Maps, else the first map, else null. Find.Maps comes from the save every client

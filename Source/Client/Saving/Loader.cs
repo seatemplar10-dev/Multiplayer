@@ -19,6 +19,10 @@ public static class Loader
 
     public static void ReloadGame(List<int> mapsToLoad, bool changeScene, Action customPostLoadAction)
     {
+        // 1.7 lab, FIXES row 118: an in-place reload replaces the Game too; PostLoad gives this client's view back
+        if (Current.Game != null)
+            AsyncTime.WorldCurrentMapPin.RememberViewForReload();
+
         var gameDoc = DataSnapshotToXml(Multiplayer.session.dataSnapshot, mapsToLoad);
 
         LoadPatch.gameToLoad = new TempGameData(gameDoc, Multiplayer.session.dataSnapshot.SessionData);
@@ -78,6 +82,14 @@ public static class Loader
         Multiplayer.AsyncWorldTime.cmds = new Queue<ScheduledCommand>(
             Multiplayer.session.dataSnapshot.MapCmds.GetValueSafe(ScheduledCommand.Global) ?? []);
         // Map cmds are added in MapAsyncTimeComp.FinalizeInit
+
+        // 1.7 lab, FIXES row 118: a multifaction snapshot has no currentMapIndex (SaveLoad.CreateGameDataSnapshot), so after a
+        // rejoin this client viewed no map until something switched it (the host in lab mp89: 19 min, until the next desync).
+        // Replays keep their old behaviour (the lab compares them with live runs).
+        if (Multiplayer.IsReplay)
+            AsyncTime.WorldCurrentMapPin.ForgetViewForReload();
+        else
+            AsyncTime.WorldCurrentMapPin.RestoreViewAfterLoad(Multiplayer.RealPlayerFaction, Multiplayer.WorldComp?.spectatorFaction);
     }
 
     private static XmlDocument DataSnapshotToXml(GameDataSnapshot dataSnapshot, List<int> mapsToLoad)
