@@ -140,6 +140,9 @@ namespace Multiplayer.Client.Desyncs
 
         public static bool ShouldAddStackTraceForDesyncLog()
         {
+            // 1.7 lab, FIXES row 152: only the simulation's own thread adds traces. A background job that draws Rand while
+            // the map ticks (Map Preview's preview thread, lab F1) entered one PC's trace list and ended the session.
+            if (!UnityData.IsInMainThread) return false;
             if (!SupportsDeferredStackTracing) return false;
             if (Multiplayer.Client == null) return false;
             if (Multiplayer.settings.desyncTracingMode == DesyncTracingMode.None) return false;
