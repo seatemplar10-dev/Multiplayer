@@ -225,7 +225,13 @@ public static class FactionCreator
 
         if (!ModsConfig.IdeologyActive || Find.IdeoManager.classicMode || chooseIdeoInfo.SelectedIdeo == null)
         {
-            faction.ideos.SetPrimary(Faction.OfPlayer.ideos.PrimaryIdeo);
+            // 1.7 lab, FIXES row 153: this runs in a long event in each PC's own faction context, so Faction.OfPlayer is the
+            // host's faction on the host and the spectator on a joiner (lab FA1: different gear, split at the first spawn).
+            // Take the first real player faction in the list instead: the same faction on every PC.
+            var spectator = Multiplayer.WorldComp?.spectatorFaction;
+            var source = Find.FactionManager.AllFactionsListForReading
+                .FirstOrDefault(f => f.IsPlayer && f != spectator && f.ideos?.PrimaryIdeo != null);
+            faction.ideos.SetPrimary((source ?? Faction.OfPlayer).ideos.PrimaryIdeo);
         }
         else
         {
