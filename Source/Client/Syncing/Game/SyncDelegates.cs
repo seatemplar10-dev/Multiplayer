@@ -272,7 +272,9 @@ namespace Multiplayer.Client
             SyncMethod.Lambda(typeof(Building_VoidMonolith), nameof(Building_VoidMonolith.GetGizmos), 2).SetDebugOnly(); // Dev relink
             // TryTakeOrderedJob call is already synced, but we also need to make sure that
             // CompProximityLetter.letterSent is set to true to prevent a desync.
-            SyncDelegate.Lambda(typeof(Building_VoidMonolith), nameof(Building_VoidMonolith.GetFloatMenuOptions), 0);
+            // 1.7 lab, FIXES row 145: the compiler numbers Investigate b__1 (b__0 = OrderActivation, whose job is synced anyway);
+            // ordinal 0 left Investigate's letterSent write on the clicking PC only (audit d143 row 37, IL of game 4982).
+            SyncDelegate.Lambda(typeof(Building_VoidMonolith), nameof(Building_VoidMonolith.GetFloatMenuOptions), 1);
 
             SyncDelegate.Lambda(typeof(CompNociosphere), nameof(CompNociosphere.TargetLocation), 1);
 
