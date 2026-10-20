@@ -32,6 +32,18 @@ namespace Multiplayer.Client
         private int cappedOpinions;
         private long listEntriesCompared; // FIXES row 113: shows in the "sync check passed" line that checkpoints are compared
 
+        // FIXES row 99 (live full-state checksum): the lab harness's checkpoints of the last FullStateCheckpoints.CarryTicks MP
+        // ticks; every finished opinion carries them, so any compared window after a checkpoint compares it
+        private readonly List<FullStateHash> recentFullState = [];
+        private long fullStateCompared; // common checkpoints compared, shown in the "sync check passed" line
+
+        /// <summary>
+        /// FIXES row 99, lab hook (null unless Sea's MP Lab harness sets it, -mplabfulllive): called once per full-state
+        /// checkpoint both opinions of a compared pair carry, with (MP timer, local hash, remote hash, the pair's desync message
+        /// or null). A desync stops the comparisons (Multiplayer.session.desynced), so the first unequal call is the first mismatch.
+        /// </summary>
+        public static Action<int, ulong, ulong, string> OnFullStateCompared;
+
         private const int MaxBacklog = 30;
 
         public ClientSyncOpinion FinishLocalOpinion()
@@ -40,6 +52,12 @@ namespace Multiplayer.Client
             currentOpinion.roundMode = RoundMode.GetCurrentRoundMode();
             var opinion = currentOpinion;
             currentOpinion = null;
+
+            // FIXES row 99: the recent full-state checkpoints ride in every opinion (the same timers on every PC: opinions are
+            // finished at the same MP timers and the harness walks at the same ones)
+            FullStateCheckpoints.Prune(recentFullState, TickPatch.Timer);
+            if (recentFullState.Count > 0)
+                opinion.fullStateHashes = new List<FullStateHash>(recentFullState);
 
             // Every side drops the same traces past the cap, so the window is still compared; say so now and then
             if (opinion.tracesCapped)
@@ -118,6 +136,7 @@ namespace Multiplayer.Client
 
             // Actually do the comparison to find any desync
             var desyncMessage = oldOpinion.CheckForDesync(newOpinion);
+            ReportFullState(oldOpinion, newOpinion, desyncMessage);
 
             if (desyncMessage != null)
             {
@@ -143,11 +162,35 @@ namespace Multiplayer.Client
                     Log.Message($"Multiplayer: sync check {checksPassed} passed (opinion start tick {oldOpinion.startTick}, " +
                                 $"trace hashes local {localOpinion.desyncStackTraceHashes.Count} / remote " +
                                 $"{remoteOpinion.desyncStackTraceHashes.Count}, arbiter playing {Multiplayer.session.ArbiterPlaying}, " +
-                                $"list checkpoint entries compared so far {listEntriesCompared})");
+                                $"list checkpoint entries compared so far {listEntriesCompared}, " +
+                                $"full-state checkpoints compared so far {fullStateCompared})");
                 }
 
                 // Return inner data to the pool
                 oldOpinion.Clear();
+            }
+        }
+
+        // FIXES row 99: counts the full-state checkpoints the pair compared and hands each to the lab hook
+        private void ReportFullState(ClientSyncOpinion a, ClientSyncOpinion b, string desyncMessage)
+        {
+            var local = a.isLocalClientsOpinion ? a : b;
+            var remote = a.isLocalClientsOpinion ? b : a;
+            var pairs = FullStateCheckpoints.Common(local.fullStateHashes, remote.fullStateHashes);
+            fullStateCompared += pairs.Count;
+
+            var hook = OnFullStateCompared;
+            if (hook == null) return;
+            foreach (var (l, r) in pairs)
+            {
+                try
+                {
+                    hook(l.timer, l.hash, r.hash, desyncMessage);
+                }
+                catch (Exception e)
+                {
+                    Log.Error($"Multiplayer: full-state checkpoint hook failed at MP timer {l.timer}: {e}");
+                }
             }
         }
 
@@ -245,6 +288,17 @@ namespace Multiplayer.Client
             OpinionInBuilding.TryMarkSimulating();
             var data = OpinionInBuilding.GetMapData(map);
             ListCheckpoint.Take(data.listHashes ??= new List<ListHash>(4), mapTick, allThings, normal, rare, longList);
+        }
+
+        /// <summary>
+        /// FIXES row 99 (live full-state checksum): the lab harness (MPLabFullState, -mplabfulllive) calls this from TickPatch.DoTick's
+        /// postfix with the root hash of its full-state walk at MP timer <paramref name="timer"/>. The checkpoint rides in every
+        /// opinion finished in the next <see cref="FullStateCheckpoints.CarryTicks"/> MP ticks.
+        /// </summary>
+        public void TryAddFullStateHash(int timer, ulong hash)
+        {
+            if (!ShouldCollect) return;
+            FullStateCheckpoints.Add(recentFullState, timer, hash);
         }
 
         /// <summary>

@@ -82,6 +82,9 @@ public record struct SyncOpinion : IPacketBufferable
     public bool simulating;
     public RoundModeEnum roundMode;
 
+    // FIXES row 99 (live full-state checksum): the harness's recent full-state checkpoints (FullStateCheckpoints), protocol 59+
+    public List<FullStateHash> fullStateHashes;
+
     public void Bind(PacketBuffer buf)
     {
         buf.Bind(ref startTick);
@@ -95,6 +98,10 @@ public record struct SyncOpinion : IPacketBufferable
 
         buf.Bind(ref simulating);
         buf.BindEnum(ref roundMode);
+
+        // Written as an empty list when the opinion carries no checkpoint. Same bytes as FullStateHash.WriteList.
+        if (buf.isWriting) fullStateHashes ??= [];
+        buf.Bind(ref fullStateHashes, BinderOf.Identity<FullStateHash>(), maxLength: FullStateHash.MaxPerOpinion);
     }
 }
 

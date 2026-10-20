@@ -155,7 +155,9 @@ public class PacketTest
             ],
             traceHashes = [999, 888, 777],
             simulating = true,
-            roundMode = RoundModeEnum.ToNearest
+            roundMode = RoundModeEnum.ToNearest,
+            // Protocol 59 (FIXES row 99): one full-state checkpoint
+            fullStateHashes = [new FullStateHash { timer = 2500, hash = 0x0123456789ABCDEF }]
         };
 
         yield return new ClientSyncInfoPacket { SyncOpinion = sampleOpinion };

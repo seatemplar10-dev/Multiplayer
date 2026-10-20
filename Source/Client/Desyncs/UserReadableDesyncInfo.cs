@@ -142,6 +142,13 @@ namespace Multiplayer.Client
 
                     text.AppendLine($"World: {local.worldRandomStates.SequenceEqual(remote.worldRandomStates)}");
                     text.AppendLine($"Cmds: {local.commandRandomStates.SequenceEqual(remote.commandRandomStates)}");
+
+                    // FIXES row 99: full-state checkpoints (the lab harness's -mplabfulllive), compared on the MP timers both carry
+                    var fullState = FullStateCheckpoints.FirstDifference(local.fullStateHashes, remote.fullStateHashes, "local", "remote");
+                    text.AppendLine($"Full state ({local.fullStateHashes?.Count ?? 0} local / {remote.fullStateHashes?.Count ?? 0} " +
+                                    $"remote checkpoints): {fullState ?? "equal"}");
+                    foreach (var (l, r) in FullStateCheckpoints.Common(local.fullStateHashes, remote.fullStateHashes))
+                        text.AppendLine($"{l.timer} {l.hash:x16} {r.hash:x16} {(l.hash != r.hash ? "x" : "")}");
                 }
 
                 text.AppendLine();

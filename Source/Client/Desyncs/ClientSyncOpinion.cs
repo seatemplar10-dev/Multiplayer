@@ -36,7 +36,24 @@ namespace Multiplayer.Client
         // Set when a trace was dropped because of the cap; SyncCoordinator.FinishLocalOpinion logs it
         public bool tracesCapped;
 
+        // FIXES row 99 (live full-state checksum): the lab harness's checkpoints of the last FullStateCheckpoints.CarryTicks MP
+        // ticks, attached by SyncCoordinator.FinishLocalOpinion. Null when there are none.
+        public List<FullStateHash> fullStateHashes;
+
         public string CheckForDesync(ClientSyncOpinion other)
+        {
+            var message = CheckForDesyncWithoutFullState(other);
+
+            // FIXES row 99: a full-state checksum difference on an MP timer both sides carry is named by itself; with another
+            // difference it is added to that
+            var fullState = FullStateCheckpoints.FirstDifference(fullStateHashes, other.fullStateHashes, SideName, other.SideName);
+            if (fullState == null) return message;
+            return message == null
+                ? $"Full-state checksum mismatch {fullState}"
+                : $"{message}; full-state checksum mismatch too, {fullState}";
+        }
+
+        private string CheckForDesyncWithoutFullState(ClientSyncOpinion other)
         {
             if (roundMode != other.roundMode)
                 return $"FP round mode doesn't match: {roundMode} != {other.roundMode}";
@@ -105,6 +122,7 @@ namespace Multiplayer.Client
             writer.WritePrefixedInts(desyncStackTraceHashes);
             writer.WriteBool(simulating);
             writer.WriteShort((short)roundMode);
+            FullStateHash.WriteList(writer, fullStateHashes); // same bytes as SyncOpinion.Bind (protocol 59)
 
             return writer.ToArray();
         }
@@ -117,7 +135,8 @@ namespace Multiplayer.Client
                 { randomStates = state.randomStates, listHashes = state.listHashes }).ToList(),
             desyncStackTraceHashes = sync.traceHashes,
             simulating = sync.simulating,
-            roundMode = sync.roundMode
+            roundMode = sync.roundMode,
+            fullStateHashes = sync.fullStateHashes
         };
 
         public SyncOpinion ToNet() => new()
@@ -129,7 +148,8 @@ namespace Multiplayer.Client
                 { mapId = state.mapId, randomStates = state.randomStates, listHashes = state.listHashes }).ToList(),
             traceHashes = desyncStackTraceHashes,
             simulating = simulating,
-            roundMode = roundMode
+            roundMode = roundMode,
+            fullStateHashes = fullStateHashes
         };
 
         public static ClientSyncOpinion Deserialize(ByteReader data)
@@ -152,6 +172,7 @@ namespace Multiplayer.Client
             var traceHashes = new List<int>(data.ReadPrefixedInts());
             var simulating = data.ReadBool();
             var roundMode = data.ReadShort();
+            var fullStateHashes = FullStateHash.ReadList(data);
 
             return new ClientSyncOpinion(startTick)
             {
@@ -160,7 +181,8 @@ namespace Multiplayer.Client
                 mapStates = maps,
                 desyncStackTraceHashes = traceHashes,
                 simulating = simulating,
-                roundMode = (RoundModeEnum)roundMode
+                roundMode = (RoundModeEnum)roundMode,
+                fullStateHashes = fullStateHashes
             };
         }
 

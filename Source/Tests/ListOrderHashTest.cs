@@ -332,6 +332,7 @@ public class ListOrderHashTest
         Assert.That(data.ReadPrefixedInts(), Is.EqualTo(new[] { 999, 888 }));
         Assert.That(data.ReadBool(), Is.False);
         Assert.That(data.ReadShort(), Is.EqualTo((short)RoundModeEnum.ToNearest));
+        Assert.That(FullStateHash.ReadList(data), Is.Empty); // protocol 59 (FIXES row 99): no full-state checkpoint here
         Assert.That(data.Left, Is.EqualTo(0));
     }
 

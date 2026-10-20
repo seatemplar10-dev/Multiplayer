@@ -8,7 +8,8 @@ namespace Multiplayer.Common
         public const string SimpleVersion = "0.11.5";
         // 57: ClientInitDataPacket.ModData.configs is a list (was one optional config)
         // 58: sync opinions carry list order/content checkpoints per map (MapRandomState.listHashes, FIXES row 113)
-        public const int Protocol = 58;
+        // 59: sync opinions carry the lab harness's full-state checkpoints (SyncOpinion.fullStateHashes, FIXES row 99)
+        public const int Protocol = 59;
 
         public static readonly string? GitHash = Assembly.GetExecutingAssembly()
             .GetCustomAttributes<AssemblyMetadataAttribute>()
