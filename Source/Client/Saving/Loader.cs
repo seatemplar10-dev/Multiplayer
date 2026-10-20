@@ -83,6 +83,14 @@ public static class Loader
             Multiplayer.session.dataSnapshot.MapCmds.GetValueSafe(ScheduledCommand.Global) ?? []);
         // Map cmds are added in MapAsyncTimeComp.FinalizeInit
 
+        // 1.7 lab, FIXES row 142: a map command that arrives after the map's FinalizeInit read its list went (consistentCommandOrder)
+        // into the world queue replaced above, so this client never ran it (lab R6: the arbiter skipped the host's hold-fire press
+        // at MP 7466 and split). The snapshot lists hold every command since the join point and none has run yet: rebuild the map
+        // queues from them too. Same queues as before when nothing arrived in between.
+        foreach (Map map in Find.Maps)
+            map.AsyncTime().cmds = new Queue<ScheduledCommand>(
+                Multiplayer.session.dataSnapshot.MapCmds.GetValueSafe(map.uniqueID) ?? []);
+
         // 1.7 lab, FIXES row 118: a multifaction snapshot has no currentMapIndex (SaveLoad.CreateGameDataSnapshot), so after a
         // rejoin this client viewed no map until something switched it (the host in lab mp89: 19 min, until the next desync).
         // Replays keep their old behaviour (the lab compares them with live runs).
