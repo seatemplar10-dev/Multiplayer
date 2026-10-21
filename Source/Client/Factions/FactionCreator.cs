@@ -48,31 +48,54 @@ public static class FactionCreator
         {
             var scenario = creationData.scenarioDef?.scenario ?? Current.Game.Scenario;
             Map newMap = null;
+            Faction newFaction;
 
-            PrepareGameInitData(playerId, scenario, executingOnlyOnIssuer, creationData.startingPossessions);
+            // 1.7 lab, FIXES row 170 (runs FA3 / FA4): this long event runs outside any command context, i.e. in each PC's OWN faction
+            // context (row 153), and MpScope.PushFaction only sets Faction.OfPlayer, not the faction's world data (research, policies,
+            // history, storyteller: MultiplayerWorldComp.SetFaction). So InitNewGame's starting research went into each PC's own research
+            // manager, and a FactionRepeater pop inside the scope could leave a PC's world data on the new faction after it (FA4: faction
+            // 69's research progress in another insertion order on host and arbiter). The whole body now runs under ONE fixed faction with
+            // its world data (the first real player faction: the same on every PC), the new faction's game init under a full push of the
+            // new faction, and both are popped (world data back to this PC's own faction) before the issuer switches to the new faction.
+            FactionExtensions.PushFaction(null, FixedContextFaction(), force: true);
+            try
+            {
+                PrepareGameInitData(playerId, scenario, executingOnlyOnIssuer, creationData.startingPossessions);
 
-            var newFaction = NewFactionWithIdeo(
-                creationData.factionName,
-                creationData.factionColor,
-                scenario.playerFaction.factionDef,
-                creationData.chooseIdeoInfo
-            );
+                newFaction = NewFactionWithIdeo(
+                    creationData.factionName,
+                    creationData.factionColor,
+                    scenario.playerFaction.factionDef,
+                    creationData.chooseIdeoInfo
+                );
 
-            if (creationData.generateMap)
-                using (MpScope.PushFaction(newFaction))
+                if (creationData.generateMap)
+                    using (MpScope.PushFaction(newFaction))
+                    {
+                        foreach (var pawn in StartingPawnUtility.StartingAndOptionalPawns)
+                            pawn.ideo.SetIdeo(newFaction.ideos.PrimaryIdeo);
+
+                        newMap = GenerateNewMap(creationData.startingTile, scenario, creationData.setupNextMapFromTickZero);
+                    }
+
+                foreach (Map map in Find.Maps)
+                    foreach (var f in Find.FactionManager.AllFactions.Where(f => f.IsPlayer))
+                        map.attackTargetsCache.Notify_FactionHostilityChanged(f, newFaction);
+
+                FactionExtensions.PushFaction(null, newFaction, force: true);
+                try
                 {
-                    foreach (var pawn in StartingPawnUtility.StartingAndOptionalPawns)
-                        pawn.ideo.SetIdeo(newFaction.ideos.PrimaryIdeo);
-
-                    newMap = GenerateNewMap(creationData.startingTile, scenario, creationData.setupNextMapFromTickZero);
+                    InitNewGame(scenario);
                 }
-
-            foreach (Map map in Find.Maps)
-                foreach (var f in Find.FactionManager.AllFactions.Where(f => f.IsPlayer))
-                    map.attackTargetsCache.Notify_FactionHostilityChanged(f, newFaction);
-
-            using (MpScope.PushFaction(newFaction))
-                InitNewGame(scenario);
+                finally
+                {
+                    FactionExtensions.PopFaction();
+                }
+            }
+            finally
+            {
+                FactionExtensions.PopFaction();
+            }
 
             if (executingOnlyOnIssuer)
             {
@@ -88,6 +111,13 @@ public static class FactionCreator
                 Multiplayer.Client.Send(new ClientSetFactionPacket(Multiplayer.session.playerId, newFaction.loadID));
             }
         }, "GeneratingMap", doAsynchronously: true, GameAndMapInitExceptionHandlers.ErrorWhileGeneratingMap);
+    }
+
+    // FIXES row 170: the first real (non-spectator) player faction in the faction list - the same faction on every PC
+    private static Faction FixedContextFaction()
+    {
+        var spectator = Multiplayer.WorldComp?.spectatorFaction;
+        return Find.FactionManager.AllFactionsListForReading.FirstOrDefault(f => f.IsPlayer && f != spectator) ?? Faction.OfPlayer;
     }
 
     private static void ClearPortraitCacheFromPawnConfigPage()
