@@ -99,8 +99,26 @@ public static class MapSetup
     {
         var mapComp = map.MpComp();
 
-        mapComp.factionData[f.loadID] = FactionMapData.New(f.loadID, map);
-        mapComp.factionData[f.loadID].areaManager.AddStartingAreas();
+        var data = FactionMapData.New(f.loadID, map);
+        mapComp.factionData[f.loadID] = data;
+
+        // 1.7 lab, FIXES row 169 (run FA3): AddStartingAreas runs mod postfixes that read map.areaManager instead of __instance (Vehicles'
+        // Patch_Areas.AddVehicleAreas -> map.EnsureAreaInitialized<Area_Road/Area_RoadAvoidal>, TD Enhancement Pack's
+        // TryMakeNewAllowed_Patch -> MapComponent_AreaOrder.Notify_Added -> map.areaManager.AllAreas). FactionCreator.CreateFaction
+        // calls this from a long event that runs in each PC's OWN faction context, so map.areaManager was the host's own faction
+        // on the host and the spectator on a joiner: Road/RoadAvoidal landed in a different faction's manager (2 area ids taken
+        // on the joiners only, nextAreaID 46 vs 48) and the area order index was counted in a different manager. Swap in the
+        // new faction's manager for the call so the result does not depend on the PC.
+        var prevAreaManager = map.areaManager;
+        map.areaManager = data.areaManager;
+        try
+        {
+            data.areaManager.AddStartingAreas();
+        }
+        finally
+        {
+            map.areaManager = prevAreaManager;
+        }
 
         mapComp.customFactionData[f.loadID] = CustomFactionMapData.New(f.loadID, map);
     }
