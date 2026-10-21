@@ -129,6 +129,9 @@ namespace Multiplayer.Client
 
         public int ver;
 
+        // 1.7 lab (FIXES row 166): true only while the synced Click runs on this PC; WindowStackTryRemove drops an entry only then
+        internal static bool clicking;
+
         protected PersistentDialog(Map map)
         {
             this.map = map;
@@ -153,7 +156,15 @@ namespace Multiplayer.Client
         public void Click(int ver, int opt)
         {
             if (ver != this.ver) return;
-            Dialog.curNode.options[opt].Activate();
+            clicking = true;
+            try
+            {
+                Dialog.curNode.options[opt].Activate();
+            }
+            finally
+            {
+                clicking = false;
+            }
             this.ver++;
         }
 
@@ -680,6 +691,12 @@ namespace Multiplayer.Client
         {
             if (Multiplayer.Client == null) return;
             if (Multiplayer.InInterface) return;
+            // 1.7 lab (FIXES row 166, lab run SS-A6): mapDialogs is synced state, but any same-type window opened outside a map
+            // context (WindowStack.Add -> RemoveWindowsOfType -> TryRemove, Verse/WindowStack.cs:360 / :599, decomp 4981) evicted the
+            // persistent window on the PCs that showed it and dropped the entry there only (host lost dialog 31309, the headless arbiter
+            // kept it). Only the synced Click (which runs on every PC, window or not) may drop an entry; an entry whose window closes
+            // any other way stays and ForceShowDialogs shows it again.
+            if (!PersistentDialog.clicking) return;
 
             var session = PersistentDialog.FindDialog(window);
             session?.map.MpComp().mapDialogs.Remove(session);
