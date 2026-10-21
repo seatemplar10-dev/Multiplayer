@@ -838,6 +838,32 @@ namespace Multiplayer.Client.Patches
     // a living pawn the next AgeTickInterval then runs PostResolveLifeStageChange (health state check, a cache clear) on one PC only.
     // Whenever a multiplayer game finishes initialising, every pawn alive or dead reads its life stage once, in one fixed order, under a
     // pushed random state, so the flag (and the kind name it may change) is set by the same code at the same point on every PC.
+    // 1.7 lab (FIXES row 165, live save-state checksum + id-caller probe, runs SS-B1 / SS-A5 / SS-A6): LetterStack.BundleLetter
+    // makes its "N more letters" bundle lazily with LetterMaker.MakeLetter, which takes an id from the SAVED letter counter
+    // (Verse/LetterStack.cs:32-40, decomp 4981). Only LettersOnGUI reads it, i.e. only a PC that draws letters, and the cache is
+    // per LetterStack, so a drawing PC took one more id after every load: every later letter id (the archive, and Multiplayer's
+    // persistent dialogs that name a letter) differed from the arbiter's. In a session the bundle letter gets id -1 and the counter
+    // is put back; it is never saved or referenced by id.
+    [HarmonyPatch(typeof(LetterStack), nameof(LetterStack.BundleLetter), MethodType.Getter)]
+    static class BundleLetterTakesNoSavedId
+    {
+        static readonly AccessTools.FieldRef<LetterStack, BundleLetter> cache = AccessTools.FieldRefAccess<LetterStack, BundleLetter>("bundleLetterCache");
+        static readonly AccessTools.FieldRef<UniqueIDsManager, int> nextLetterID = AccessTools.FieldRefAccess<UniqueIDsManager, int>("nextLetterID");
+
+        static void Prefix(LetterStack __instance, out int __state)
+        {
+            __state = Multiplayer.Client != null && cache(__instance) == null && Find.UniqueIDsManager != null
+                ? nextLetterID(Find.UniqueIDsManager) : int.MinValue;
+        }
+
+        static void Postfix(BundleLetter __result, int __state)
+        {
+            if (__state == int.MinValue || Find.UniqueIDsManager == null) return;
+            nextLetterID(Find.UniqueIDsManager) = __state;
+            if (__result != null) __result.ID = -1;
+        }
+    }
+
     [HarmonyPatch(typeof(Game), nameof(Game.FinalizeInit))]
     static class ResolveLifeStagesOnLoad
     {
