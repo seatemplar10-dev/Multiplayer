@@ -864,6 +864,36 @@ namespace Multiplayer.Client.Patches
         }
     }
 
+    // 1.7 lab (FIXES row 157 = row 79 as a class, forced-fire run SS-F1): Fire keeps its "fires on the map" count in two STATIC
+    // fields (fireCount, lastFireCountUpdateTick; decomp 4981 RimWorld/Fire.cs TickInterval) and reads it to decide a simulation
+    // Rand.Value (sparks when fireCount < 15). Statics outlive Multiplayer's join-point reload: after the reload the host still held
+    // the count of its last pre-save tick (SS-F1 fire probe: host count=15@46132, a fresh joiner count=0@0), so a count that changed
+    // after that update in the same tick would steer the draw differently per PC. Mod copies of the pattern (VGE Astrofire, VQE
+    // Cryptofreeze, FireFlamework FireFrame - lane d157's statics list) use the same field names. Whenever a multiplayer game finishes
+    // initialising, every such static is reset so every PC recounts on its first fire tick.
+    [HarmonyPatch(typeof(Game), nameof(Game.FinalizeInit))]
+    static class ResetFireCountStaticsOnLoad
+    {
+        static List<FieldInfo> fields;
+
+        static void Postfix()
+        {
+            if (Multiplayer.Client == null) return;
+            fields ??= GenTypes.AllTypes
+                .SelectMany(StaticFieldsOf)
+                .Where(f => f.FieldType == typeof(int) && !f.IsLiteral && !f.IsInitOnly && (f.Name == "lastFireCountUpdateTick" || f.Name == "fireCount"))
+                .ToList();
+            foreach (var f in fields)
+                f.SetValue(null, f.Name == "fireCount" ? 0 : -1);
+        }
+
+        static IEnumerable<FieldInfo> StaticFieldsOf(Type t)
+        {
+            try { return t.IsGenericTypeDefinition ? Array.Empty<FieldInfo>() : t.GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly); }
+            catch { return Array.Empty<FieldInfo>(); }   // a mod type that cannot load
+        }
+    }
+
     [HarmonyPatch(typeof(Game), nameof(Game.FinalizeInit))]
     static class ResolveLifeStagesOnLoad
     {
