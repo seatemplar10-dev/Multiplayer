@@ -831,4 +831,30 @@ namespace Multiplayer.Client.Patches
         }
     }
 
+    // 1.7 lab (FIXES row 160, live save-state checksum run SS-A1): Pawn_AgeTracker.ExposeData resets the unsaved cachedLifeStageIndex
+    // to -1 at PostLoadInit, and the first CurLifeStageIndex read after a load recalculates it and sets the SAVED lifeStageChange = true
+    // (the new index differs from -1). Which code reads first is per PC: the simulation for most spawned pawns, but for a corpse or a
+    // portrait only the windowed PC's renderer (SS-A1: a dead world pawn's lifeStageChange True on the host, absent on the arbiter); for
+    // a living pawn the next AgeTickInterval then runs PostResolveLifeStageChange (health state check, a cache clear) on one PC only.
+    // Whenever a multiplayer game finishes initialising, every pawn alive or dead reads its life stage once, in one fixed order, under a
+    // pushed random state, so the flag (and the kind name it may change) is set by the same code at the same point on every PC.
+    [HarmonyPatch(typeof(Game), nameof(Game.FinalizeInit))]
+    static class ResolveLifeStagesOnLoad
+    {
+        static void Postfix()
+        {
+            if (Multiplayer.Client == null) return;
+            Rand.PushState();
+            try
+            {
+                foreach (var pawn in PawnsFinder.AllMapsWorldAndTemporary_AliveOrDead)
+                    _ = pawn?.ageTracker?.CurLifeStageIndex;
+            }
+            finally
+            {
+                Rand.PopState();
+            }
+        }
+    }
+
 }
