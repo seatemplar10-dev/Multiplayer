@@ -36,6 +36,7 @@ namespace Multiplayer.Client
 
         public static SyncHandler HandleCmd(ByteReader data)
         {
+            int randDepth = Rand.stateStack.Count;
             int syncId = data.ReadInt32();
             SyncHandler handler;
 
@@ -90,6 +91,17 @@ namespace Multiplayer.Client
                 KeyIsDownPatch.shouldQueue = null;
                 Find.Selector.selected = prevSelected;
                 FieldRefs.worldSelected(Find.WorldSelector) = prevWorldSelected;
+
+                // 1.7 lab (FIXES row 191, run MF8): a command whose code throws between Rand.PushState and PopState (SendPawn: a starting
+                // pawn with an addiction threw while its needs were read back) left a push open. Vanilla's Rand.EnsureStateStackEmpty
+                // repairs it later, at a moment that differs per PC, so one PC ran a whole tick inside the stale push (no traces, other
+                // draws). Every PC runs the same command and leaks the same pushes, so popping them here keeps the PCs equal.
+                if (Rand.stateStack.Count > randDepth)
+                {
+                    Log.Warning($"MP: command {handler} left {Rand.stateStack.Count - randDepth} Rand state push(es) open; popped at the end of the command (row 191)");
+                    while (Rand.stateStack.Count > randDepth)
+                        Rand.PopState();
+                }
             }
 
             return handler;
