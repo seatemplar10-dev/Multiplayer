@@ -76,6 +76,14 @@ public static class FactionCreator
                             pawn.ideo.SetIdeo(newFaction.ideos.PrimaryIdeo);
 
                         newMap = GenerateNewMap(creationData.startingTile, scenario, creationData.setupNextMapFromTickZero);
+
+                        // 1.7 lab (FIXES row 190, runs MF6 / MF7): mods queue map spawns with LongEventHandler.ExecuteWhenFinished during
+                        // generation (VEF's GenerateMap postfix -> DoMapSpawns). Vanilla runs them after this event has ended, when
+                        // Multiplayer.InInterface is true, so their things got ids from each PC's local counter (UniqueIdsPatch: a truck
+                        // wreck was -4 on the host, -111 on the joiner) = a shared-list split on the new map. Run them here, still inside
+                        // the event, where ids come from the synced UniqueIDsManager. Main thread only: the actions may touch graphics.
+                        if (UnityData.IsInMainThread)
+                            LongEventHandler.ForceExecuteToExecuteWhenFinished();
                     }
 
                 foreach (Map map in Find.Maps)
