@@ -10,6 +10,7 @@ using Multiplayer.Client.Saving;
 using Multiplayer.Common;
 
 using RimWorld;
+using RimWorld.Planet;
 using Verse;
 
 namespace Multiplayer.Client
@@ -452,8 +453,9 @@ namespace Multiplayer.Client
                 if (Scribe.mode == LoadSaveMode.PostLoadInit)
                 {
                     opt.link = parent.saveNodes.ElementAtOrDefault(linkIndex)?.node;
-                    opt.action = (Action)parent.fieldValues.ElementAtOrDefault(actionIndex)?.value;
-                    opt.linkLateBind = (Func<DiaNode>)parent.fieldValues.ElementAtOrDefault(linkLateBindIndex)?.value;
+                    // 1.7 lab (FIXES row 167): Resolved builds a saved delegate on first use, after every cross ref is resolved
+                    opt.action = (Action)parent.fieldValues.ElementAtOrDefault(actionIndex)?.Resolved;
+                    opt.linkLateBind = (Func<DiaNode>)parent.fieldValues.ElementAtOrDefault(linkLateBindIndex)?.Resolved;
                 }
             }
         }
@@ -492,8 +494,64 @@ namespace Multiplayer.Client
                     mode = LookMode.Reference;
                 else if (typeof(IExposable).IsAssignableFrom(type))
                     mode = LookMode.Deep;
+                // 1.7 lab (row 167 sibling): ChoiceLetter.Option_JumpToLocation's closure holds a GlobalTargetInfo; saved as a
+                // plain object it had every field index -1 and threw on load (Unsupported plain object type, live 22 Oct 20:09)
+                else if (type == typeof(GlobalTargetInfo))
+                    mode = LookMode.GlobalTargetInfo;
+                else if (type == typeof(TargetInfo))
+                    mode = LookMode.TargetInfo;
+                else if (type == typeof(LocalTargetInfo))
+                    mode = LookMode.LocalTargetInfo;
                 else
                     mode = PlainObjectMode;
+            }
+
+            // 1.7 lab (FIXES row 167): a delegate is built after every cross ref is resolved. Its target can be a Reference
+            // FieldSave later in fieldValues (ChoiceLetter.Option_Close: delegate first, the letter second), which is still
+            // null while the delegate resolves its own cross refs (NRE at target.GetType(), live 22 Oct 20:09 and 20:19)
+            private bool delegateBuilt;
+
+            public object Resolved
+            {
+                get
+                {
+                    if (mode == DelegateMode && value == null && !delegateBuilt && Scribe.mode != LoadSaveMode.Saving)
+                        BuildDelegate();
+                    return value;
+                }
+            }
+
+            private void BuildDelegate()
+            {
+                delegateBuilt = true;
+
+                if (methodName == null)
+                    return;
+
+                if (targetIndex != -1)
+                {
+                    object target = parent.fieldValues.ElementAtOrDefault(targetIndex)?.value;
+                    if (target == null)
+                    {
+                        Log.Warning($"Persistent dialog {parent.id}: delegate {methodName} has no target (fieldValues[{targetIndex}]), its option keeps no action");
+                        return;
+                    }
+
+                    value = Delegate.CreateDelegate(
+                        type,
+                        target,
+                        DelegateSerialization.CheckMethodAllowed(
+                            AccessTools.Method(target.GetType(), methodName))
+                    );
+                }
+                else
+                {
+                    value = Delegate.CreateDelegate(
+                        type,
+                        DelegateSerialization.CheckMethodAllowed(
+                            AccessTools.Method(GenTypes.GetTypeInAnyAssembly(methodDeclaringType), methodName))
+                    );
+                }
             }
 
             private Dictionary<string, int> fields;
@@ -552,18 +610,54 @@ namespace Multiplayer.Client
 
                     if (Scribe.mode == LoadSaveMode.LoadingVars)
                     {
-                        if (!type.IsCompilerGenerated())
-                            throw new Exception($"Persistent dialog field deserialization: Unsupported plain object type: {type.FullName}");
+                        // 1.7 lab: the throw here left a null slot in fieldValues (Scribe_Collections keeps it), and the closure
+                        // that pointed at it then died in PostLoadInit before setting its other fields (live 22 Oct 20:09)
+                        if (type == null || !type.IsCompilerGenerated())
+                        {
+                            // saves made before the TargetInfo modes hold GlobalTargetInfo as a plain object with every field
+                            // index -1: never restorable, so Invalid (a default struct is cell (0,0,0), which counts as valid)
+                            value = type == typeof(GlobalTargetInfo) ? (object)GlobalTargetInfo.Invalid : null;
+                            Log.Warning($"Persistent dialog {parent.id}: unsupported plain object type {typeName}, loaded as {value ?? "null"}");
+                            return;
+                        }
 
                         value = Activator.CreateInstance(type);
                         Scribe_Collections.Look(ref fields, "fields");
                     }
 
-                    if (Scribe.mode == LoadSaveMode.PostLoadInit && value != null)
+                    if (Scribe.mode == LoadSaveMode.PostLoadInit && value != null && fields != null)
                     {
                         foreach (var kv in fields)
-                            value.SetPropertyOrField(kv.Key, parent.fieldValues[kv.Value].value);
+                        {
+                            // one unrestorable field no longer leaves the closure's other fields unset
+                            var fieldValue = kv.Value >= 0 ? parent.fieldValues.ElementAtOrDefault(kv.Value)?.Resolved : null;
+                            if (fieldValue != null)
+                                value.SetPropertyOrField(kv.Key, fieldValue);
+                        }
                     }
+                }
+                else if (mode == LookMode.GlobalTargetInfo)
+                {
+                    // set at LoadingVars and again at ResolvingCrossRefs (Thing / WorldObject / Map references), so a closure's
+                    // PostLoadInit, which always runs after the cross refs, reads the resolved target
+                    var v = value is GlobalTargetInfo g ? g : GlobalTargetInfo.Invalid;
+                    Scribe_TargetInfo.Look(ref v, "value");
+                    if (Scribe.mode == LoadSaveMode.LoadingVars || Scribe.mode == LoadSaveMode.ResolvingCrossRefs)
+                        value = v;
+                }
+                else if (mode == LookMode.TargetInfo)
+                {
+                    var v = value is TargetInfo t ? t : TargetInfo.Invalid;
+                    Scribe_TargetInfo.Look(ref v, "value");
+                    if (Scribe.mode == LoadSaveMode.LoadingVars || Scribe.mode == LoadSaveMode.ResolvingCrossRefs)
+                        value = v;
+                }
+                else if (mode == LookMode.LocalTargetInfo)
+                {
+                    var v = value is LocalTargetInfo l ? l : LocalTargetInfo.Invalid;
+                    Scribe_TargetInfo.Look(ref v, "value");
+                    if (Scribe.mode == LoadSaveMode.LoadingVars || Scribe.mode == LoadSaveMode.ResolvingCrossRefs)
+                        value = v;
                 }
                 else if (mode == DelegateMode)
                 {
@@ -582,30 +676,14 @@ namespace Multiplayer.Client
                     {
                         Scribe_Values.Look(ref methodDeclaringType, "methodType");
                         Scribe_Values.Look(ref methodName, "methodName");
-                        Scribe_Values.Look(ref targetIndex, "targetIndex");
+                        // -1 when absent: Saving writes targetIndex only for a delegate with a Target (the default 0 bound a
+                        // static method's delegate to fieldValues[0])
+                        Scribe_Values.Look(ref targetIndex, "targetIndex", -1);
                     }
 
-                    if (Scribe.mode == LoadSaveMode.ResolvingCrossRefs)
-                    {
-                        if (targetIndex != -1)
-                        {
-                            object target = parent.fieldValues[targetIndex].value;
-                            value = Delegate.CreateDelegate(
-                                type,
-                                target,
-                                DelegateSerialization.CheckMethodAllowed(
-                                    AccessTools.Method(target.GetType(), methodName))
-                            );
-                        }
-                        else
-                        {
-                            value = Delegate.CreateDelegate(
-                                type,
-                                DelegateSerialization.CheckMethodAllowed(
-                                    AccessTools.Method(GenTypes.GetTypeInAnyAssembly(methodDeclaringType), methodName))
-                            );
-                        }
-                    }
+                    // 1.7 lab (FIXES row 167): was built in ResolvingCrossRefs (see Resolved)
+                    if (Scribe.mode == LoadSaveMode.PostLoadInit && value == null && !delegateBuilt)
+                        BuildDelegate();
                 }
             }
         }
