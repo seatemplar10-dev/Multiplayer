@@ -85,15 +85,23 @@ namespace Multiplayer.Client
 
             var defDiff = false;
             var defStatusMap = new Dictionary<DefInfo, DefCheckStatus>();
+            var softDiffs = new List<string>();
             var i = 0;
             foreach (var local in MultiplayerData.localDefInfos)
             {
                 var status = packet.defStatus[i++];
                 defStatusMap.Add(local.Value, status);
 
-                if (status != DefCheckStatus.Ok)
+                // 1.7 lab: soft entries (DefInfo.SoftPrefix) are reported, never refuse the join
+                if (status != DefCheckStatus.Ok && local.Key.StartsWith(DefInfo.SoftPrefix))
+                    softDiffs.Add($"{local.Key.Substring(DefInfo.SoftPrefix.Length)}: {status} (here {local.Value.count})");
+                else if (status != DefCheckStatus.Ok)
                     defDiff = true;
             }
+
+            if (softDiffs.Count > 0)
+                Log.Error("Multiplayer: defs differ from the host's in def types the join check does not enforce (a mod subclasses them), expect desyncs: " +
+                          string.Join(", ", softDiffs));
 
             var remoteInfo = RemoteData.FromNet(packet);
             // Captured before Complete runs: StopMultiplayerAndClearAllWindows nulls the session
