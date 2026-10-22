@@ -152,6 +152,7 @@ namespace Multiplayer.Client.AsyncTime
             if (Multiplayer.Client == null) return;
             if (WorldRendererUtility.WorldSelected) return;
             if (FactionCreator.generatingMap) return;
+            if (Find.CurrentMap == null) return;   // 1.7 lab (FIXES row 189): a spectator has no map, and under ProgramState.Entry (the starting-pawn page) WorldSelected is false
 
             var asyncTime = Find.CurrentMap.AsyncTime();
             var timeSpeed = Multiplayer.IsReplay ? TickPatch.replayTimeSpeed : asyncTime.DesiredTimeSpeed;
