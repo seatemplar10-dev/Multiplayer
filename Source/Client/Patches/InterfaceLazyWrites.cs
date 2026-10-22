@@ -84,3 +84,30 @@ static class ResearchGetProgressNoStoreInInterface
         return false;
     }
 }
+
+// 1.7 lab (FIXES row 201, live session 22 Oct 19:48): art made by interface code on ONE PC (gear of a Character Editor / starting-page pawn,
+// built in Playing state: CompArt.InitializeArt asks for a tale only then, CompArt.cs:100) picked a world tale and counted a use on it
+// (TaleManager.cs:149 Notify_NewlyUsed -> Tale.uses++, saved, Tale.cs:109/118) on that PC only = per-PC saved state that also weights every
+// later synced art pick (Tale.cs:38 InterestLevel). The pawn's art reached the other PCs taleless anyway (SendPawn's cross refs hold no
+// tales: "Could not resolve reference ... Tale_71"), so interface-made art is taleless on every PC and counts no use.
+[HarmonyPatch(typeof(TaleManager), nameof(TaleManager.GetRandomTaleReferenceForArt))]
+static class TaleForArtTalelessInInterface
+{
+    static bool Prefix(ref TaleReference __result)
+    {
+        if (!Multiplayer.InInterface) return true;
+        __result = TaleReference.Taleless;
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(TaleManager), nameof(TaleManager.GetRandomTaleReferenceForArtConcerning))]
+static class TaleForArtConcerningTalelessInInterface
+{
+    static bool Prefix(ref TaleReference __result)
+    {
+        if (!Multiplayer.InInterface) return true;
+        __result = TaleReference.Taleless;
+        return false;
+    }
+}

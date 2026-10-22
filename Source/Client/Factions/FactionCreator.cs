@@ -302,9 +302,15 @@ public static class FactionCreator
     {
         List<MemeDef> list = chooseIdeoInfo.SelectedIdeo.memes.ToList();
 
+        // 1.7 lab (FIXES row 203, live session 22 Oct 19:48): the same meme rule as vanilla Page_ChooseIdeoPreset.DoPreset (:537-545). Adding the
+        // chosen (or a random) structure on top of a preset that already has one gave James's ideo two structures (Archist deityCount 0 +
+        // RimDark Imperial 1 -> no deity, "Grammar unresolvable. Root 'salvation'", ERR: in the description).
         if (chooseIdeoInfo.SelectedStructure != null)
+        {
+            list.RemoveAll(m => m.category == MemeCategory.Structure);
             list.Add(chooseIdeoInfo.SelectedStructure);
-        else if (DefDatabase<MemeDef>.AllDefsListForReading.Where(m => m.category == MemeCategory.Structure && IdeoUtility.IsMemeAllowedFor(m, Find.Scenario.playerFaction.factionDef)).TryRandomElement(out var result))
+        }
+        else if (!list.Any(m => m.category == MemeCategory.Structure) && DefDatabase<MemeDef>.AllDefsListForReading.Where(m => m.category == MemeCategory.Structure && IdeoUtility.IsMemeAllowedFor(m, Find.Scenario.playerFaction.factionDef)).TryRandomElement(out var result))
             list.Add(result);
 
         Ideo ideo = IdeoGenerator.GenerateIdeo(new IdeoGenerationParms(Find.FactionManager.OfPlayer.def, forceNoExpansionIdeo: false, null, null, list, chooseIdeoInfo.SelectedIdeo.classicPlus, forceNoWeaponPreference: true));
