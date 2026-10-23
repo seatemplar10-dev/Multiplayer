@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -132,6 +133,7 @@ public class ServerJoiningState : AsyncConnectionState
 
         var defStatus = new DefCheckStatus[packet.defInfos.Length];
         var defsMatch = true;
+        var softDiffs = new List<string>();
 
         for (var i = 0; i < packet.defInfos.Length; i++)
         {
@@ -145,11 +147,19 @@ public class ServerJoiningState : AsyncConnectionState
             else if (info.hash != defInfo.hash)
                 status = DefCheckStatus.Hash_Diff;
 
-            if (status != DefCheckStatus.Ok)
+            // 1.7 lab: soft entries (DefInfo.SoftPrefix) are reported, never refuse the join
+            if (status != DefCheckStatus.Ok && defInfo.name.StartsWith(DefInfo.SoftPrefix))
+                softDiffs.Add($"{defInfo.name.Substring(DefInfo.SoftPrefix.Length)}: {status}" +
+                              (info != null ? $" (host {info.count}, joiner {defInfo.count})" : ""));
+            else if (status != DefCheckStatus.Ok)
                 defsMatch = false;
 
             defStatus[i] = status;
         }
+
+        if (softDiffs.Count > 0)
+            ServerLog.Error($"{Player.Username}'s defs differ from the host's in def types the join check does not enforce " +
+                            $"(a mod subclasses them), expect desyncs: {string.Join(", ", softDiffs)}");
 
         connection.SendFragmented(new ServerJoinDataPacket
         {

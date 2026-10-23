@@ -146,6 +146,20 @@ namespace Multiplayer.Client
                 dict.Add(defType.Name, GetDefInfo(defs, d => GenText.StableStringHash(d.defName)));
             }
 
+            // 1.7 lab (live co-op 22 Oct): a game def type that any mod subclasses is not a leaf, so the loop above never
+            // compared it (ThingDef: Humanoid Alien Races' ThingDef_AlienRace). A mod setting that removes ThingDefs on one PC
+            // only (AdMech Armoury's faction weapons) went unseen. Each such database goes in under DefInfo.SoftPrefix: the
+            // host compares it and both sides log a difference, but it does not refuse the join (not enforced before either)
+            foreach (var defType in GenDefDatabase.AllDefTypesWithDatabases())
+            {
+                if (defType.Assembly != typeof(Game).Assembly) continue;
+                if (IgnoredVanillaDefTypes.Contains(defType)) continue;
+                if (dict.ContainsKey(defType.Name)) continue;
+
+                var defs = GenDefDatabase.GetAllDefsInDatabaseForDef(defType);
+                dict.Add(DefInfo.SoftPrefix + defType.Name, GetDefInfo(defs, d => GenText.StableStringHash(d.defName)));
+            }
+
             localDefInfos = dict;
         }
 
