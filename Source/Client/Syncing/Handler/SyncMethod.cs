@@ -222,6 +222,14 @@ namespace Multiplayer.Client
             return this;
         }
 
+        // 1.7 lab (FIXES row 200): LocalOnlyTargets may run the original on this PC only when nothing in this handler expects the arguments to
+        // travel by value (ExposeParameter: SendPawn ships a page pawn on purpose) or the receive side to do extra work.
+        internal bool PlainForLocalRun =>
+            !cancelIfAnyArgNull && !cancelIfNoSelectedMapObjects && !cancelIfNoSelectedWorldObjects
+            && beforeCall == null && afterCall == null
+            && targetTransformer == null && argTransformers.All(t => t == null)
+            && !argTypes.Any(a => a.expose);
+
         public ISyncMethod SetPreInvoke(Action<object, object[]> action)
         {
             beforeCall = action;

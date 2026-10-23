@@ -56,6 +56,19 @@ namespace Multiplayer.Client.Patches
         }
     }
 
+    // 1.7 lab (FIXES row 202): with no long event running, vanilla runs the action at once (LongEventHandler.cs:301-303). Inside
+    // Multiplayer's ReadExposable that is mid-load; queue it for ScribeUtil.ReadExposable to run after FinalizeLoading.
+    [HarmonyPatch(typeof(LongEventHandler), nameof(LongEventHandler.ExecuteWhenFinished))]
+    static class DeferWhenFinishedDuringReadExposable
+    {
+        static bool Prefix(Action action)
+        {
+            if (ScribeUtil.readingExposable == 0 || LongEventHandler.currentEvent != null || !UnityData.IsInMainThread) return true;
+            ScribeUtil.deferredWhenFinished.Add(action);
+            return false;
+        }
+    }
+
     [HarmonyPatch(typeof(LongEventHandler), nameof(LongEventHandler.ExecuteToExecuteWhenFinished))]
     static class LongEventEnd
     {

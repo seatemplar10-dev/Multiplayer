@@ -172,28 +172,77 @@ namespace Multiplayer.Client
             return FinishWriting();
         }
 
+        // 1.7 lab (FIXES row 202, live session 22 Oct 19:48, James's Settle): SendPawn reads its pawn with ReadExposable inside the command,
+        // where no long event runs, so LongEventHandler.ExecuteWhenFinished ran mods' "after loading" actions at once, in the middle of
+        // Pawn.ExposeData (HAR's adult forced trait -> TraitSet.GainTrait read pawn.needs before the needs were loaded: NRE, postfixes
+        // skipped). While ReadExposable runs, such actions are queued (LongEvents.cs DeferWhenFinishedDuringReadExposable) and run here
+        // after FinalizeLoading, still inside the command, the same on every PC.
+        internal static int readingExposable;
+        internal static readonly List<Action> deferredWhenFinished = new();
+
         public static T ReadExposable<T>(byte[] data, Action<T> beforeFinish = null) where T : IExposable
         {
             loading = true;
-            InitFromXmlDoc(LoadDocument(data));
-            SupplyCrossRefs();
-
+            readingExposable++;
+            int mark = deferredWhenFinished.Count;
+            bool finished = false;
             T element = default;
-            Scribe_Deep.Look(ref element, RootNode);
 
-            beforeFinish?.Invoke(element);
-
-            if (removeMapRefs)
+            try
             {
-                sharedCrossRefs.Reregister(removedMapRefs);
-                removedMapRefs = null;
+                InitFromXmlDoc(LoadDocument(data));
+                SupplyCrossRefs();
+
+                Scribe_Deep.Look(ref element, RootNode);
+
+                beforeFinish?.Invoke(element);
+
+                if (removeMapRefs)
+                {
+                    sharedCrossRefs.Reregister(removedMapRefs);
+                    removedMapRefs = null;
+                }
+
+                FinalizeLoading();
+                finished = true;
+            }
+            finally
+            {
+                readingExposable--;
+                if (!finished && deferredWhenFinished.Count > mark)
+                {
+                    // only this (possibly nested) read's own actions: they would run against a half-loaded object
+                    Log.Warning($"MP: dropped {deferredWhenFinished.Count - mark} ExecuteWhenFinished action(s) queued while a ReadExposable failed (row 202)");
+                    deferredWhenFinished.RemoveRange(mark, deferredWhenFinished.Count - mark);
+                }
             }
 
-            FinalizeLoading();
+            if (readingExposable == 0)
+                RunDeferredWhenFinished();
 
             // Default cross refs restored in LoadedObjectsClearPatch
 
             return element;
+        }
+
+        static void RunDeferredWhenFinished()
+        {
+            if (deferredWhenFinished.Count == 0) return;
+
+            var actions = deferredWhenFinished.ToList();
+            deferredWhenFinished.Clear();
+
+            foreach (var action in actions)
+            {
+                try
+                {
+                    action();
+                }
+                catch (Exception e)
+                {
+                    Log.Error("Could not execute post-long-event action (deferred until Multiplayer's ReadExposable finished, row 202). Exception: " + e);
+                }
+            }
         }
     }
 }

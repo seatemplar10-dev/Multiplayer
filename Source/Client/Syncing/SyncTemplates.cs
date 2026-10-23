@@ -16,6 +16,9 @@ namespace Multiplayer.Client
         static bool General(int internalId, object instance, object[] args)
         {
             if (Multiplayer.ShouldSync) {
+                if (LocalOnlyTargets.ShouldRunLocally(internalId, instance, args))
+                    return true;   // row 200: the target pawn exists only on this PC - run the original here, unsynced
+
                 Sync.internalIdToSyncMethod[internalId].DoSync(instance, args);
                 Patches.C13Core.OnSyncIntercepted(internalId);   // C13: other mods' postfixes of this call wait for the command
                 return false;
