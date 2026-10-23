@@ -63,7 +63,16 @@ public class QuestPartsListForReadingPatch
     {
         if (StorytellerTickPatch.updating)
         {
+            // Multifaction: every player faction's storyteller ticks every map (FactionRepeater). On a map whose settlement
+            // belongs to another player faction, this faction's storyteller must not run the map's quest incident makers too,
+            // or each quest threat fires once per player faction (err-admech-storyteller, 22 Oct; it was hidden because
+            // Magos Xenobiologis' IsDefeated postfix threw before Storyteller.MakeIncidentsForInterval reached its quest loop)
+            // (updating is also set outside a Multiplayer game, StorytellerTickPatch.Prefix, so check Client first)
+            var foreignHome = Multiplayer.Client != null && Multiplayer.GameComp.multifaction &&
+                Multiplayer.MapContext?.ParentFaction is { IsPlayer: true } owner && owner != Faction.OfPlayer;
             __result = __result.Where(questPart => {
+                if (foreignHome && questPart is IIncidentMakerQuestPart)
+                    return false;
                 if (questPart is QuestPart_ThreatsGenerator questPartThreatsGenerator)
                 {
                     return questPartThreatsGenerator.mapParent?.Map == Multiplayer.MapContext;

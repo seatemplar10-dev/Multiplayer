@@ -159,13 +159,25 @@ namespace Multiplayer.Client
     {
         static bool ignore;
 
-        static bool Prefix() =>
-            FactionRepeater.Template(
+        static bool Prefix()
+        {
+            var runOriginal = FactionRepeater.Template(
                 Multiplayer.game?.worldComp.factionData,
                 d => d.storyteller.StorytellerTick(),
                 null,
                 ref ignore
             );
+
+            // Multifaction: the world tick runs in the spectator's context (AsyncWorldTimeComp.PreContext), so whatever
+            // GameComponents queue there (Anomaly's HarbingerTreeSpawn and monolith level incidents) lands in the spectator's
+            // incident queue, which Template skips - those incidents never fired. Tick only that queue, once per world tick
+            // (its fire ticks are world ticks); no interval incidents for the spectator (err-admech-storyteller, 22 Oct)
+            if (!runOriginal && AsyncTime.AsyncWorldTimeComp.tickingWorld && Multiplayer.GameComp.multifaction &&
+                Faction.OfPlayer == Multiplayer.WorldComp.spectatorFaction)
+                Find.Storyteller.incidentQueue.IncidentQueueTick();
+
+            return runOriginal;
+        }
     }
 
     [HarmonyPatch(typeof(StoryWatcher), nameof(StoryWatcher.StoryWatcherTick))]
