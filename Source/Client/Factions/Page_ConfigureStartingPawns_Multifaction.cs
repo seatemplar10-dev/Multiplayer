@@ -23,6 +23,10 @@ namespace Multiplayer.Client.Factions
             base.PostClose();
 
             CleanUpTemporaryFaction();
+
+            // FIXES rows 236/237: closed without sending (DoCreateFaction restores on Next); "Back" reopens the ideology page first.
+            if (!Find.WindowStack.IsOpen<Page_ChooseIdeo_Multifaction>())
+                FactionSidebar.RestoreGameStateAfterPages();
         }
 
         public override void DoNext()

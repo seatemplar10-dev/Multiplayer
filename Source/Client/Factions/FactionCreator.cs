@@ -290,7 +290,7 @@ public static class FactionCreator
             try
             {
                 generatingIdeo = true;
-                newIdeo = GenerateIdeo(chooseIdeoInfo);
+                newIdeo = GenerateIdeo(chooseIdeoInfo, def);
             }
             finally
             {
@@ -335,7 +335,9 @@ public static class FactionCreator
         return faction;
     }
 
-    private static Ideo GenerateIdeo(IdeologyData chooseIdeoInfo)
+    // FIXES row 236: factionDef = the event's scenario's player faction (the same on every PC), not Find.Scenario, which the
+    // configuration pages had replaced on the issuer only.
+    private static Ideo GenerateIdeo(IdeologyData chooseIdeoInfo, FactionDef factionDef)
     {
         List<MemeDef> list = chooseIdeoInfo.SelectedIdeo.memes.ToList();
 
@@ -347,7 +349,7 @@ public static class FactionCreator
             list.RemoveAll(m => m.category == MemeCategory.Structure);
             list.Add(chooseIdeoInfo.SelectedStructure);
         }
-        else if (!list.Any(m => m.category == MemeCategory.Structure) && DefDatabase<MemeDef>.AllDefsListForReading.Where(m => m.category == MemeCategory.Structure && IdeoUtility.IsMemeAllowedFor(m, Find.Scenario.playerFaction.factionDef)).TryRandomElement(out var result))
+        else if (!list.Any(m => m.category == MemeCategory.Structure) && DefDatabase<MemeDef>.AllDefsListForReading.Where(m => m.category == MemeCategory.Structure && IdeoUtility.IsMemeAllowedFor(m, factionDef)).TryRandomElement(out var result))
             list.Add(result);
 
         Ideo ideo = IdeoGenerator.GenerateIdeo(new IdeoGenerationParms(Find.FactionManager.OfPlayer.def, forceNoExpansionIdeo: false, null, null, list, chooseIdeoInfo.SelectedIdeo.classicPlus, forceNoWeaponPreference: true));

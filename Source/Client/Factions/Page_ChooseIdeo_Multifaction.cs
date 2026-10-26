@@ -49,6 +49,14 @@ public class Page_ChooseIdeo_Multifaction : Page
         DoBottomButtons(inRect);
     }
 
+    // FIXES rows 236/237: closed without going on (Page.DoNext opens the pawn page before it closes this one).
+    public override void PostClose()
+    {
+        base.PostClose();
+        if (!Find.WindowStack.IsOpen<Page_ConfigureStartingPawns_Multifaction>())
+            FactionSidebar.RestoreGameStateAfterPages();
+    }
+
     public override bool CanDoNext()
     {
         if (pageChooseIdeo.selectedIdeo == null)

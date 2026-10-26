@@ -399,6 +399,41 @@ namespace Multiplayer.Client
             finally
             {
                 Current.programStateInt = prevState;
+                // FIXES rows 236/237: the commands are sent; the synced event must find this PC's game as every other PC has it.
+                RestoreGameStateAfterPages();
+            }
+        }
+
+        // 1.7 lab (FIXES rows 236/237, 26 Oct class sweep): the configuration pages change the GAME on the issuer only: the scenario
+        // (InitializeDataForGameConfigurationPages) and the custom xenotype list (ScenPart_ConfigPage_ConfigureStartingPawnsBase
+        // .PostIdeoChosen clears and refills it). Both are saved and read by the simulation (Find.Scenario every world tick and in
+        // FactionCreator's synced event). Kept when the pages open, put back when they send (DoCreateFaction) or close without sending.
+        private static Scenario gameScenarioBeforePages;
+        private static List<CustomXenotype> customXenotypesBeforePages;
+
+        internal static void KeepGameStateForPages()
+        {
+            gameScenarioBeforePages ??= Current.Game.Scenario;
+            customXenotypesBeforePages ??= Current.Game.customXenotypeDatabase?.customXenotypes?.ToList();
+        }
+
+        internal static void RestoreGameStateAfterPages()
+        {
+            if (gameScenarioBeforePages != null)
+            {
+                Current.Game.Scenario = gameScenarioBeforePages;
+                gameScenarioBeforePages = null;
+            }
+
+            if (customXenotypesBeforePages != null)
+            {
+                var list = Current.Game.customXenotypeDatabase?.customXenotypes;
+                if (list != null)
+                {
+                    list.Clear();
+                    list.AddRange(customXenotypesBeforePages);
+                }
+                customXenotypesBeforePages = null;
             }
         }
 
@@ -444,6 +479,7 @@ namespace Multiplayer.Client
         }
         private static void InitializeDataForGameConfigurationPages()
         {
+            KeepGameStateForPages();
             Current.Game.Scenario = chosenScenario.scenario;
 
             Current.Game.InitData = new GameInitData
