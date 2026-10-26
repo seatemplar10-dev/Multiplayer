@@ -116,6 +116,11 @@ namespace Multiplayer.Client.Patches
             if (archivable is Letter { ID: < 0 })
                 return false;
 
+            // 1.7 lab (FIXES row 192): the issuer-only scenario intro of a multifaction Settle (ScenPart_GameStartDialog in
+            // FactionCreator.InitLocalVisuals, now under useLocalIdsOverride) gets a local id: shown, never archived.
+            if (archivable is ArchivedDialog { ID: < 0 })
+                return false;
+
             return true;
         }
     }

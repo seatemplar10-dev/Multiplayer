@@ -17,6 +17,7 @@ public static class FactionCreator
 {
     private static Dictionary<int, List<Pawn>> pawnStore = new();
     public static bool generatingMap;
+    public static bool generatingIdeo; // FIXES row 192: IdeoFoundation.RandomizeIcon is skipped while set (see NewFactionWithIdeo)
     public const string preventSpecialCalculationPathInGenTicksTicksAbs = "dummy";
 
     public static void ClearData()
@@ -139,7 +140,19 @@ public static class FactionCreator
         // need to be executed by all players in the game.
         var onlyVisualScenParts = new HashSet<Type>() { typeof(ScenPart_GameStartDialog) };
 
-        PostGameStart(scenario, onlyVisualScenParts);
+        // 1.7 lab (FIXES row 192, round 1): this runs on the issuer only, after the synced event. The intro dialog took an id from the
+        // synced UniqueIDsManager (nextArchivedDialogID 1 vs 0) and was archived into the new faction's history on the issuer only.
+        // Local ids here; ArchiveAddPatch drops archived dialogs with a negative id. The dialog itself still opens.
+        bool prevLocalIds = Patches.UniqueIdsPatch.useLocalIdsOverride;
+        try
+        {
+            Patches.UniqueIdsPatch.useLocalIdsOverride = true;
+            PostGameStart(scenario, onlyVisualScenParts);
+        }
+        finally
+        {
+            Patches.UniqueIdsPatch.useLocalIdsOverride = prevLocalIds;
+        }
 
         CameraJumper.TryJump(MapGenerator.playerStartSpotInt, generatedMap);
     }
@@ -273,7 +286,31 @@ public static class FactionCreator
         }
         else
         {
-            var newIdeo = GenerateIdeo(chooseIdeoInfo);
+            Ideo newIdeo;
+            try
+            {
+                generatingIdeo = true;
+                newIdeo = GenerateIdeo(chooseIdeoInfo);
+            }
+            finally
+            {
+                generatingIdeo = false;
+            }
+
+            // 1.7 lab (FIXES row 192, round 1): vanilla picks the icon and colour in a deferred action (IdeoFoundation.RandomizeIcon ->
+            // LongEventHandler.ExecuteWhenFinished), run later in this event after whatever else is queued; host and joiner got different
+            // picks (RoundA/LightOrange vs Ideoligion_ToolsD/LightBlue). RandomizeIcon is skipped while generatingIdeo; the pick happens here
+            // from a state seeded by the synced ideo id, with the same pools as vanilla.
+            Rand.PushState(Gen.HashCombineInt(newIdeo.id, 0x5EA192));
+            try
+            {
+                newIdeo.SetIcon(IdeoFoundation.GetRandomIconDef(newIdeo), IdeoFoundation.GetRandomColorDef(newIdeo));
+            }
+            finally
+            {
+                Rand.PopState();
+            }
+
             faction.ideos.SetPrimary(newIdeo);
             Find.IdeoManager.Add(newIdeo);
         }

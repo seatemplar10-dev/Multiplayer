@@ -227,7 +227,47 @@ namespace Multiplayer.Client.Patches
     [HarmonyPatch(typeof(StoryWatcher_PopAdaptation), nameof(StoryWatcher_PopAdaptation.Notify_PawnEvent))]
     static class CancelStoryWatcherEventInInterface
     {
-        static bool Prefix() => !Multiplayer.InInterface;
+        // 1.7 lab (FIXES row 192, round 1): after a multifaction Settle the joiner's adaptDays was 0 and the host's 5.5 (GainedColonist
+        // resets it; vanilla PawnGenerator raises it for every starting pawn, also for the joiner-only page pawns, generated under
+        // ProgramState.Entry where Multiplayer.InInterface is false). A pawn with a negative thing id (page pawn, or a SendPawn pawn before
+        // its renumbering) raises nothing. Every event is logged (first 40) with the watcher's owner, so a lab run names the caller if a
+        // split remains.
+        static int logged;
+
+        static bool Prefix(StoryWatcher_PopAdaptation __instance, Pawn p, PopAdaptationEvent ev)
+        {
+            if (Multiplayer.InInterface) return false;
+            if (Multiplayer.Client == null) return true;
+
+            bool skip = p != null && p.thingIDNumber < 0;
+            if (logged < 40)
+            {
+                logged++;
+                try
+                {
+                    int owner = -1;
+                    var data = Multiplayer.game?.worldComp?.factionData;
+                    if (data != null)
+                        foreach (var kv in data)
+                            if (kv.Value?.storyWatcher?.watcherPopAdaptation == __instance) { owner = kv.Key; break; }
+                    Log.Message($"[MP row192] PopAdaptation {ev} pawn {p?.ThingID} faction {p?.Faction?.loadID} watcher of faction {owner} " +
+                                $"state {Current.ProgramState} skipped {skip} ticks {Find.TickManager?.TicksGame}");
+                }
+                catch (Exception e)
+                {
+                    Log.Warning($"[MP row192] PopAdaptation log failed: {e.Message}");
+                }
+            }
+
+            return !skip;
+        }
+    }
+
+    [HarmonyPatch(typeof(IdeoFoundation), nameof(IdeoFoundation.RandomizeIcon))]
+    static class SkipIdeoIconWhileCreatingFaction
+    {
+        // FIXES row 192: FactionCreator.NewFactionWithIdeo picks the new faction ideo's icon and colour from a seeded state instead.
+        static bool Prefix() => !Factions.FactionCreator.generatingIdeo;
     }
 
     [HarmonyPatch(typeof(AutoSlaughterManager), nameof(AutoSlaughterManager.Notify_ConfigChanged))]
