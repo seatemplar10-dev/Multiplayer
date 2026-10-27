@@ -443,6 +443,7 @@ namespace Multiplayer.Client
         // as Cancel does, so the save is the game every other PC has. The player opens Settle again after the join point.
         internal static bool CloseConfigurationPagesForJoinPoint()
         {
+            if (Find.WindowStack == null) return false;
             var pages = Find.WindowStack.Windows
                 .Where(w => w is Page_ChooseIdeo_Multifaction or Page_ConfigureStartingPawns_Multifaction).ToList();
             foreach (var page in pages)
