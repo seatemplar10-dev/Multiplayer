@@ -36,6 +36,8 @@ namespace Multiplayer.Client
         {
             // FIXES row 252: the save carries the global time and the reload takes worldTicks from it, so a leak would stay
             WorldTickGuard.ResetIfLeaked(Multiplayer.AsyncWorldTime.worldTicks);
+            // FIXES row 257: the Settle pages hold game state of this PC only; the save must not
+            var settlePagesClosed = FactionSidebar.CloseConfigurationPagesForJoinPoint();
             Multiplayer.reloading = true;
 
             var tweenedPos = new Dictionary<int, Vector3>();
@@ -113,6 +115,9 @@ namespace Multiplayer.Client
             Multiplayer.AsyncWorldTime.cmds = mapCmds[ScheduledCommand.Global];
 
             Multiplayer.reloading = false;
+
+            if (settlePagesClosed)
+                Messages.Message("Multiplayer: a join point closed the Settle pages. Open Settle again.", MessageTypeDefOf.RejectInput, historical: false);
 
             return gameData;
         }

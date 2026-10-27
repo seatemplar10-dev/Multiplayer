@@ -437,6 +437,20 @@ namespace Multiplayer.Client
             }
         }
 
+        // FIXES row 257: a join point saves and reloads the game on every PC. With the configuration pages open, this PC's save holds
+        // the pawn page's temporary faction and pawns and the scenario kept above, and the reload cannot rebuild them (lab c9soak_1:
+        // "Faction had no ideoligions after loading", Pawn_TrainingTracker PostLoadInit errors, the Settle lost). Close the pages first,
+        // as Cancel does, so the save is the game every other PC has. The player opens Settle again after the join point.
+        internal static bool CloseConfigurationPagesForJoinPoint()
+        {
+            var pages = Find.WindowStack.Windows
+                .Where(w => w is Page_ChooseIdeo_Multifaction or Page_ConfigureStartingPawns_Multifaction).ToList();
+            foreach (var page in pages)
+                Find.WindowStack.TryRemove(page, doCloseSound: false);
+            RestoreGameStateAfterPages();
+            return pages.Count > 0;
+        }
+
         private static void OpenScenarioChooser()
         {
             Find.WindowStack.Add(new Page_SelectScenario_Multifaction
