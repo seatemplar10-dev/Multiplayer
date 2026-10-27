@@ -953,4 +953,68 @@ namespace Multiplayer.Client.Patches
         }
     }
 
+    // 1.7 lab (FIXES row 261, soak c11soak_2 on C11, full-state mismatch at MP 100,100): Room keeps its stats and role in a lazy
+    // cache (decomp 4982 Verse/Room.cs GetStat, Role, GetRoomRoleIfBuildingPlaced: "if (statsAndRoleDirty) UpdateRoomStatsAndRole()").
+    // Item spawn/despawn dirties it, pawns and other changes in between do not, so the stored values depend on the tick of the first
+    // read after a dirtying. A read from the interface (inspect pane, overlays, mod UI) on one PC filled it at another tick than the
+    // first simulation read on the other PC, and a Raid tale then saved a different room impressiveness. Outside the simulation a
+    // dirty room now reads a separate copy (computed by the original, reused for 0.25 s of real time); the room's own cache stays
+    // dirty and untouched, so only simulation reads fill it, at the same tick on every PC.
+    [HarmonyPatch]
+    static class RoomStatsCacheOnlyFromSimulation
+    {
+        static readonly AccessTools.FieldRef<Room, bool> dirty = AccessTools.FieldRefAccess<Room, bool>("statsAndRoleDirty");
+        static readonly AccessTools.FieldRef<Room, DefMap<RoomStatDef, float>> stats = AccessTools.FieldRefAccess<Room, DefMap<RoomStatDef, float>>("stats");
+        static readonly AccessTools.FieldRef<Room, RoomRoleDef> role = AccessTools.FieldRefAccess<Room, RoomRoleDef>("role");
+        static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Room, InterfaceCopy> copies = new();
+        static int reported;
+
+        class InterfaceCopy { public float time; public DefMap<RoomStatDef, float> stats; public RoomRoleDef role; }
+
+        struct Saved { public bool active, fresh; public DefMap<RoomStatDef, float> stats; public RoomRoleDef role; }
+
+        static IEnumerable<MethodBase> TargetMethods()
+        {
+            yield return AccessTools.Method(typeof(Room), nameof(Room.GetStat));
+            yield return AccessTools.PropertyGetter(typeof(Room), nameof(Room.Role));
+            yield return AccessTools.Method(typeof(Room), nameof(Room.GetRoomRoleIfBuildingPlaced));
+        }
+
+        static void Prefix(Room __instance, out Saved __state)
+        {
+            __state = default;
+            if (!Multiplayer.InInterface || !dirty(__instance)) return;
+            __state = new Saved { active = true, stats = stats(__instance), role = role(__instance) };
+            if (copies.TryGetValue(__instance, out var copy) && UnityEngine.Time.realtimeSinceStartup - copy.time < 0.25f)
+            {
+                // The original sees a clean cache and reads the copy
+                stats(__instance) = copy.stats;
+                role(__instance) = copy.role;
+                dirty(__instance) = false;
+                return;
+            }
+            // The original recomputes into a new map, never into the room's own one
+            __state.fresh = true;
+            stats(__instance) = null;
+            if (Prefs.DevMode && reported < 3)
+            {
+                reported++;
+                Log.Message($"Multiplayer: a room stat read outside the simulation, kept out of the room's cache (FIXES row 261):\n{Environment.StackTrace}");
+            }
+        }
+
+        static void Finalizer(Room __instance, Saved __state, Exception __exception)
+        {
+            if (!__state.active) return;
+            if (__state.fresh && __exception == null)
+            {
+                copies.Remove(__instance);
+                copies.Add(__instance, new InterfaceCopy { time = UnityEngine.Time.realtimeSinceStartup, stats = stats(__instance), role = role(__instance) });
+            }
+            stats(__instance) = __state.stats;
+            role(__instance) = __state.role;
+            dirty(__instance) = true;
+        }
+    }
+
 }
