@@ -144,6 +144,7 @@ public class AsyncWorldTimeComp : IExposable, ITickable
 
     public void PreContext()
     {
+        WorldTickGuard.ResetIfLeaked(worldTicks);   // 1.7 lab, FIXES row 252: first, before anything reads the time
         Find.TickManager.CurTimeSpeed = DesiredTimeSpeed;
         Rand.PushState();
         Rand.StateCompressed = randState;
