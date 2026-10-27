@@ -139,12 +139,13 @@ namespace Multiplayer.Client
                         if (t.FullName != null) { if (!typesByName.TryGetValue(t.FullName, out var l)) typesByName[t.FullName] = l = new(); l.Add(t); }
                 }
             }
+            // sites.tsv gives the bare name (no "/paramCount"): then every overload with a body
             int s = key.IndexOf("::", StringComparison.Ordinal), sl = key.LastIndexOf('/');
-            if (s < 0 || sl < s) return new();
-            string name = key.Substring(s + 2, sl - s - 2);
-            int n = int.Parse(key.Substring(sl + 1));
+            if (s < 0) return new();
+            string name = sl < s ? key.Substring(s + 2) : key.Substring(s + 2, sl - s - 2);
+            int n = sl < s ? -1 : int.Parse(key.Substring(sl + 1));
             return typesByName.GetValueOrDefault(key.Substring(0, s))?.SelectMany(t => t.GetMethods(All).Cast<MethodBase>().Concat(t.GetConstructors(All)))
-                .Where(m => m.Name == name && m.GetParameters().Length == n && m.GetMethodBody() != null).ToList() ?? new();
+                .Where(m => m.Name == name && (n < 0 || m.GetParameters().Length == n) && m.GetMethodBody() != null).ToList() ?? new();
         }
 
         static void Patch(Dictionary<MethodBase, int> fin)
@@ -167,7 +168,7 @@ namespace Multiplayer.Client
         static string MemberKey(object o) => o switch
         {
             FieldInfo f => TypeKey(f.DeclaringType) + "::" + f.Name,
-            MethodBase m => TypeKey(m.DeclaringType) + "::" + m.Name + "/" + m.GetParameters().Length,
+            MethodBase m => TypeKey(m.DeclaringType) + "::" + m.Name,   // sites.tsv names have no "/paramCount" (DetScan Bare)
             _ => null
         };
         static bool IsPrefix(OpCode o) => o == OpCodes.Constrained || o == OpCodes.Volatile || o == OpCodes.Tailcall || o == OpCodes.Unaligned || o == OpCodes.Readonly;
