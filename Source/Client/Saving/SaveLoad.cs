@@ -34,6 +34,8 @@ namespace Multiplayer.Client
 
         private static TempGameData SaveAndReloadCore(ReloadOptimizationMode optimizationMode)
         {
+            // FIXES row 252: the save carries the global time and the reload takes worldTicks from it, so a leak would stay
+            WorldTickGuard.ResetIfLeaked(Multiplayer.AsyncWorldTime.worldTicks);
             Multiplayer.reloading = true;
 
             var tweenedPos = new Dictionary<int, Vector3>();
