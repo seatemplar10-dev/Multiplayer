@@ -61,5 +61,6 @@ public static class EarlyInit
     {
         if (MpVersion.IsDebug)
             Log.Message("== Structure == \n" + SyncDict.syncWorkers.PrintStructure());
+        WriteBarrier.Init();   // lab -mplabwbar only
     }
 }
