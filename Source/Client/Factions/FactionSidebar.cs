@@ -437,21 +437,6 @@ namespace Multiplayer.Client
             }
         }
 
-        // FIXES row 257: a join point saves and reloads the game on every PC. With the configuration pages open, this PC's save holds
-        // the pawn page's temporary faction and pawns and the scenario kept above, and the reload cannot rebuild them (lab c9soak_1:
-        // "Faction had no ideoligions after loading", Pawn_TrainingTracker PostLoadInit errors, the Settle lost). Close the pages first,
-        // as Cancel does, so the save is the game every other PC has. The player opens Settle again after the join point.
-        internal static bool CloseConfigurationPagesForJoinPoint()
-        {
-            if (Find.WindowStack == null) return false;
-            var pages = Find.WindowStack.Windows
-                .Where(w => w is Page_ChooseIdeo_Multifaction or Page_ConfigureStartingPawns_Multifaction).ToList();
-            foreach (var page in pages)
-                Find.WindowStack.TryRemove(page, doCloseSound: false);
-            RestoreGameStateAfterPages();
-            return pages.Count > 0;
-        }
-
         private static void OpenScenarioChooser()
         {
             Find.WindowStack.Add(new Page_SelectScenario_Multifaction
@@ -566,6 +551,40 @@ namespace Multiplayer.Client
             Widgets.DrawTextureFitted(outerRect, labelIcon, labelIconScale, 1f);
             GUI.color = color;
             Widgets.Label(rect, label);
+        }
+    }
+
+    // FIXES row 257: a join point saves and reloads the game on every PC. With the configuration pages open, this PC's save holds
+    // the pawn page's temporary faction and pawns and the scenario FactionSidebar keeps, and the reload cannot rebuild them (lab
+    // c9soak_1: "Faction had no ideoligions after loading", Pawn_TrainingTracker PostLoadInit errors, the Settle lost). Close the
+    // pages first, as Cancel does, so the save is the game every other PC has. The player opens Settle again after the join point.
+    // Own class: a PC without pages (the arbiter too) returns before FactionSidebar's statics are touched. The join point runs in a
+    // long event, where ids are not local: the close takes local ids, as FactionCreator.InitLocalVisuals does.
+    internal static class SettlePagesAtJoinPoint
+    {
+        internal static bool Close()
+        {
+            var pages = Find.WindowStack?.Windows
+                .Where(w => w is Page_ChooseIdeo_Multifaction or Page_ConfigureStartingPawns_Multifaction).ToList();
+            if (pages == null || pages.Count == 0) return false;
+
+            bool prevLocalIds = Patches.UniqueIdsPatch.useLocalIdsOverride;
+            try
+            {
+                Patches.UniqueIdsPatch.useLocalIdsOverride = true;
+                foreach (var page in pages)
+                    Find.WindowStack.TryRemove(page, doCloseSound: false);
+                FactionSidebar.RestoreGameStateAfterPages();
+            }
+            catch (System.Exception e)
+            {
+                Log.Error($"Multiplayer: closing the Settle pages before a join point failed (FIXES row 257): {e}");
+            }
+            finally
+            {
+                Patches.UniqueIdsPatch.useLocalIdsOverride = prevLocalIds;
+            }
+            return true;
         }
     }
 }
