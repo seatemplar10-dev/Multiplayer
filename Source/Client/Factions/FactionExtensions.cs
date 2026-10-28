@@ -43,7 +43,7 @@ public static class FactionExtensions
         faction = quest.QuestLookTargets
             .Where(t => t.HasWorldObject && t.WorldObject is Settlement)
             .Select(t => ((Settlement)t.WorldObject).Faction)
-            .FirstOrDefault(f => f != null);
+            .FirstOrDefault(f => f is { IsPlayer: true }); // FIXES row 280: a quest at an NPC settlement is no player's quest
 
         return faction != null;
     }

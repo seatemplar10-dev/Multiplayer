@@ -24,6 +24,32 @@ public class MultiplayerWorldComp : IHasSessionData
 
     private int currentFactionId;
 
+    // FIXES row 280: one World StoryState per player faction. The World is one incident target for every faction's
+    // storyteller, so its StoryState (lastFireTicks, colonistCountTicks, recent quests) was shared: once the first faction
+    // fired a world quest gated on it (Royalty's Intro_Wimp: StorytellerComp_SingleOnceFixed skips when
+    // target.StoryState.lastFireTicks has the incident), no other faction ever got it. The first player faction
+    // (lowest id, the first one FactionRepeater ticks) keeps world.storyState, which holds what it fired so far;
+    // every other faction gets its own, made empty on first use. Sim only, same order on every PC.
+    public List<FactionStoryState> factionWorldStoryStates = new();
+
+    public StoryState WorldStoryStateFor(int factionId)
+    {
+        foreach (var (id, _) in factionData)
+        {
+            if (spectatorFaction != null && id == spectatorFaction.loadID) continue;
+            if (id == factionId) return world.storyState;
+            break;
+        }
+
+        foreach (var s in factionWorldStoryStates)
+            if (s.factionId == factionId)
+                return s.storyState;
+
+        var state = new FactionStoryState(world) { factionId = factionId, storyState = new StoryState(world) };
+        factionWorldStoryStates.Add(state);
+        return state.storyState;
+    }
+
     public MultiplayerWorldComp(World world)
     {
         this.world = world;
@@ -34,6 +60,10 @@ public class MultiplayerWorldComp : IHasSessionData
     public void ExposeData()
     {
         ExposeFactionData();
+
+        // FIXES row 280: missing in older saves = every faction but the first starts with an empty one
+        Scribe_Collections.Look(ref factionWorldStoryStates, "factionWorldStoryStates", LookMode.Deep, world);
+        factionWorldStoryStates ??= new List<FactionStoryState>();
 
         sessionManager.ExposeSessions();
         // Ensure a pause lock session exists if there's any pause locks registered
@@ -206,5 +236,27 @@ public class MultiplayerWorldComp : IHasSessionData
     public override string ToString()
     {
         return $"{nameof(MultiplayerWorldComp)}_{world}";
+    }
+}
+
+// FIXES row 280: one player faction's World StoryState (MultiplayerWorldComp.WorldStoryStateFor)
+public class FactionStoryState : IExposable
+{
+    private readonly World world;
+
+    public int factionId;
+    public StoryState storyState;
+
+    public FactionStoryState(World world)
+    {
+        this.world = world;
+    }
+
+    public void ExposeData()
+    {
+        Scribe_Values.Look(ref factionId, "factionId");
+        Scribe_Deep.Look(ref storyState, "storyState", world);
+        if (Scribe.mode == LoadSaveMode.LoadingVars)
+            storyState ??= new StoryState(world);
     }
 }

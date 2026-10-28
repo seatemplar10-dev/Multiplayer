@@ -163,7 +163,7 @@ namespace Multiplayer.Client
         {
             var runOriginal = FactionRepeater.Template(
                 Multiplayer.game?.worldComp.factionData,
-                d => d.storyteller.StorytellerTick(),
+                TickFactionStoryteller,
                 null,
                 ref ignore
             );
@@ -177,6 +177,28 @@ namespace Multiplayer.Client
                 Find.Storyteller.incidentQueue.IncidentQueueTick();
 
             return runOriginal;
+        }
+
+        // FIXES row 280: every player faction's storyteller ticks in the same game tick, so (1) each one gets its own
+        // World StoryState (MultiplayerWorldComp.WorldStoryStateFor) and (2) IncidentWorker's per-tick CanFireNow cache
+        // (lastCheckCanRunTick == TicksGame) is cleared first, or the second faction reused the first faction's result
+        static void TickFactionStoryteller(FactionWorldData d)
+        {
+            foreach (var def in DefDatabase<IncidentDef>.AllDefsListForReading)
+                if (def.workerInt != null)
+                    def.workerInt.lastCheckCanRunTick = -1;
+
+            var world = Find.World;
+            var shared = world.storyState;
+            world.storyState = Multiplayer.WorldComp.WorldStoryStateFor(d.factionId);
+            try
+            {
+                d.storyteller.StorytellerTick();
+            }
+            finally
+            {
+                world.storyState = shared;
+            }
         }
     }
 
