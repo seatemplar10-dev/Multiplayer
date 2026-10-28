@@ -557,6 +557,48 @@ namespace Multiplayer.Client
             if (Scribe.mode == LoadSaveMode.PostLoadInit)
                 ___allowedNutritionSettings.owner ??= __instance;
         }
+
+        // FIXES row 268: a Frame's storageSettings has no owner. Vanilla Frame.ExposeData scribes it without
+        // ctor args, and Blueprint_Storage.MakeSolidThing creates it with new StorageSettings(). The sync writer
+        // for StorageSettings sends the owner, so "Paste settings" on a frame reached every client as a null
+        // target and was dropped.
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(Frame), nameof(Frame.ExposeData))]
+        static void PostFrame(Frame __instance)
+        {
+            if (__instance.storageSettings != null)
+                FixStorage(__instance, __instance.storageSettings);
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(Blueprint_Storage), nameof(Blueprint_Storage.MakeSolidThing))]
+        static void PostBlueprintStorageMakeSolidThing(Thing __result)
+        {
+            if (__result is Frame { storageSettings: { } settings } frame)
+                settings.owner ??= frame;
+        }
+
+        // Catch-all for the other owner-less paths: Frame.Destroy, the construction-failed path in Frame and
+        // Building.Destroy give an auto-rebuild Blueprint_Storage new StorageSettings() (until a reload, where
+        // Blueprint_Storage.ExposeData passes itself). The copy/paste gizmos and the storage tab get the
+        // settings through GetStoreSettings, so the target is repaired before it is synced. The owner it sets
+        // is the one vanilla PostMake gives a new Blueprint_Storage; for Frame and Blueprint_Storage
+        // Notify_SettingsChanged is empty and neither is a haul destination, so nothing else changes.
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(Frame), nameof(Frame.GetStoreSettings))]
+        static void PostFrameGetStoreSettings(Frame __instance)
+        {
+            if (__instance.storageSettings != null)
+                __instance.storageSettings.owner ??= __instance;
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(Blueprint_Storage), nameof(Blueprint_Storage.GetStoreSettings))]
+        static void PostBlueprintStorageGetStoreSettings(Blueprint_Storage __instance)
+        {
+            if (__instance.settings != null)
+                __instance.settings.owner ??= __instance;
+        }
     }
 
     [HarmonyPatch(typeof(MoteAttachLink), nameof(MoteAttachLink.UpdateDrawPos))]

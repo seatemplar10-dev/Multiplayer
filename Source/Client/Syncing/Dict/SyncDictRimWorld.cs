@@ -1301,6 +1301,10 @@ namespace Multiplayer.Client
 
             {
                 (ByteWriter data, StorageSettings storage) => {
+                    // FIXES row 268: a null owner reads back as a null target, which every client drops
+                    // silently (SyncMethod.Handle logs it at Debug only). Say so on the sending side.
+                    if (storage.owner == null)
+                        Log.Warning($"MP: syncing StorageSettings with no owner, the call will be dropped on every client:\n{Environment.StackTrace}");
                     WriteSync(data, storage.owner);
                 },
                 (ByteReader data) => {

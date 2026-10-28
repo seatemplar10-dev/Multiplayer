@@ -544,11 +544,14 @@ namespace Multiplayer.Client
             return !SyncTimetable.DoSync(p, PawnColumnWorker_CopyPasteTimetable.clipboard);
         }
 
-        [MpPrefix(typeof(StorageSettingsClipboard), nameof(StorageSettingsClipboard.Copy))]
-        static void StorageSettingsClipboardCopy_Prefix() => Multiplayer.dontSync = true;
-
-        [MpPostfix(typeof(StorageSettingsClipboard), nameof(StorageSettingsClipboard.Copy))]
-        static void StorageSettingsClipboardCopy_Postfix() => Multiplayer.dontSync = false;
+        // Copying into the clipboard (owner-less StorageSettings) is local, never synced.
+        // Finalizer, not postfix: a postfix does not run when Copy throws, and dontSync would stay set.
+        [HarmonyPatch(typeof(StorageSettingsClipboard), nameof(StorageSettingsClipboard.Copy))]
+        static class StorageSettingsClipboardCopy_DontSync
+        {
+            static void Prefix() => Multiplayer.dontSync = true;
+            static void Finalizer() => Multiplayer.dontSync = false;
+        }
 
         [MpTranspiler(typeof(CompPlantable), nameof(CompPlantable.BeginTargeting), lambdaOrdinal: 0)]
         static IEnumerable<CodeInstruction> CompPlantableTranspiler(IEnumerable<CodeInstruction> insts)
