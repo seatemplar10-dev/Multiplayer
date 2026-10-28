@@ -9,7 +9,9 @@ namespace Multiplayer.Client
     {
         public static CaravanFormingProxy drawing;
 
-        public CaravanFormingSession Session => map.MpComp().sessionManager.GetFirstOfType<CaravanFormingSession>();
+        // FIXES row 273: the window shows the session it was opened for (one session per faction per map), not the
+        // first session on the map. Session ids are scribed, so the id stays valid after a load.
+        public CaravanFormingSession Session => map.MpComp().sessionManager.GetFirstWithId<CaravanFormingSession>(originalSessionId);
 
         public int originalSessionId;
 

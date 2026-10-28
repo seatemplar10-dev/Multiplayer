@@ -35,9 +35,14 @@ namespace Multiplayer.Client
             sessionManager = new(map);
         }
 
+        // FIXES row 273: one caravan forming session per faction on a map (multifaction: a visitor must not get the
+        // map owner's session). Called from synced code only, with the faction as a synced value - same result on every PC.
+        public CaravanFormingSession GetCaravanFormingSession(Faction faction) =>
+            sessionManager.GetFirstOfType<CaravanFormingSession>(s => s.faction == faction);
+
         public CaravanFormingSession CreateCaravanFormingSession(Faction faction, bool reform, Action onClosed, bool mapAboutToBeRemoved, IntVec3? meetingSpot = null)
         {
-            var caravanForming = sessionManager.GetFirstOfType<CaravanFormingSession>();
+            var caravanForming = GetCaravanFormingSession(faction);
             if (caravanForming == null)
             {
                 caravanForming = new CaravanFormingSession(faction, map, reform, onClosed, mapAboutToBeRemoved, meetingSpot);

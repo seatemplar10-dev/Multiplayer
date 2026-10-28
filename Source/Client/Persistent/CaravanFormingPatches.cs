@@ -174,8 +174,9 @@ namespace Multiplayer.Client.Persistent
             // (note TimedForcedExit is obsolete)
             if (Multiplayer.ExecutingCmds || Multiplayer.Ticking)
             {
+                // FIXES row 273: look up the session of the faction in context only (get or create)
                 var comp = map.MpComp();
-                if (comp.sessionManager.GetFirstOfType<CaravanFormingSession>() == null)
+                if (comp.GetCaravanFormingSession(faction) == null)
                     comp.CreateCaravanFormingSession(faction, reform, onClosed, mapAboutToBeRemoved, designatedMeetingPoint);
             }
             else // Handles opening from the interface: forming gizmos, reforming gizmos and caravan hitching spots

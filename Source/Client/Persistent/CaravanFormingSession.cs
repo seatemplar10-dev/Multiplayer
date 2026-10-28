@@ -199,13 +199,19 @@ namespace Multiplayer.Client
 
         public override FloatMenuOption GetBlockingWindowOptions(ColonistBar.Entry entry)
         {
-            return new FloatMenuOption("MpCaravanFormingSession".Translate(), () =>
+            // FIXES row 273: a map can hold one session per faction - name the faction when it is not the local one
+            string label = "MpCaravanFormingSession".Translate();
+            if (faction != null && faction != Multiplayer.RealPlayerFaction)
+                label += $" ({faction.Name})";
+
+            return new FloatMenuOption(label, () =>
             {
                 OpenWindow();
             });
         }
 
-        public bool CanExistWith(Session other) => other is not CaravanFormingSession;
+        // FIXES row 273: sessions of different factions can exist together on one map; one session per faction.
+        public bool CanExistWith(Session other) => other is not CaravanFormingSession otherForming || otherForming.faction != faction;
     }
 
 }
