@@ -94,7 +94,9 @@ namespace Multiplayer.Client
 
     public enum DesyncTracingMode
     {
-        None, Fast, Slow
+        // Lean (FIXES row 267, CoreCLR): Slow's trace entries and hashes without the stack; added last so the
+        // values of the others stay
+        None, Fast, Slow, Lean
     }
 
     public struct ColorRGBClient : IExposable
