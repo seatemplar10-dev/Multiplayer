@@ -40,8 +40,19 @@ namespace Multiplayer.Client.Desyncs
                 // microseconds instead of the Mono walk's fraction of one, so it only runs in the Slow mode. Slow is
                 // not saved in the settings file (MpSettings.ExposeData); set it for one run with -mptracemode=Slow.
                 // The arbiter is started with the host's current mode (ArbiterLauncher).
-                if (!Native.IsMono && Multiplayer.settings?.desyncTracingMode == DesyncTracingMode.Slow &&
-                    ShouldAddStackTraceForDesyncLog())
+                // FIXES row 267: Lean records the same trace entries with no stack (~15 ns instead of ~5 us at depth
+                // 40). The trace hash is the random state alone in both modes, so Lean and Slow PCs compare and the
+                // desync index is still found; only the Lean side's report has no frames. With -mptraceframehash the
+                // frames are hashed, so Lean then traces like Slow.
+                if (Native.IsMono) return;
+                var mode = Multiplayer.settings?.desyncTracingMode;
+                if (mode == DesyncTracingMode.Lean && !HashManagedFrames)
+                {
+                    if (ShouldAddStackTraceForDesyncLog())
+                        LeanTrace();
+                }
+                else if ((mode == DesyncTracingMode.Slow || mode == DesyncTracingMode.Lean) &&
+                         ShouldAddStackTraceForDesyncLog())
                     ManagedTrace();
                 return;
             }
@@ -72,7 +83,7 @@ namespace Multiplayer.Client.Desyncs
 
         public const string TraceModeArg = "mptracemode";
 
-        // -mptracemode=None|Fast|Slow sets the desync tracing mode for this run only; desyncTracingMode is not in the
+        // -mptracemode=None|Fast|Slow|Lean sets the desync tracing mode for this run only; desyncTracingMode is not in the
         // settings file and the settings UI shows it only in debug builds. Called once, right after the settings load.
         // "-mptracemode Slow" is accepted too: cmd launchers split "-name=value" at the "=".
         internal static void ApplyTraceModeArg()
@@ -86,7 +97,7 @@ namespace Multiplayer.Client.Desyncs
             }
             else
             {
-                Log.Warning($"Multiplayer: -{TraceModeArg}={value} is not None, Fast or Slow; tracing mode stays " +
+                Log.Warning($"Multiplayer: -{TraceModeArg}={value} is not None, Fast, Slow or Lean; tracing mode stays " +
                             $"{Multiplayer.settings.desyncTracingMode}");
             }
         }
@@ -136,6 +147,16 @@ namespace Multiplayer.Client.Desyncs
 
             // The depth varies with inlining like the frames do
             Multiplayer.game.sync.TryAddStackTraceForDesyncLogRaw(logItem, depth, hash, hashDepth: hashFrames);
+        }
+
+        public const string LeanInfo = "Lean trace: no stack";
+
+        // FIXES row 267: a trace entry without a stack. Same hash as ManagedTrace without -mptraceframehash
+        // (hashIn 0, hashDepth false: the random state alone), same context fields (tick, thing, faction, rng state).
+        private static void LeanTrace()
+        {
+            Multiplayer.game.sync.TryAddStackTraceForDesyncLogRaw(StackTraceLogItemRaw.GetFromPool(), 0, 0, LeanInfo,
+                hashDepth: false);
         }
 
         public static bool ShouldAddStackTraceForDesyncLog()
