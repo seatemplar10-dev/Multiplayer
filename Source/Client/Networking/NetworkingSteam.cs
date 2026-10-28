@@ -132,6 +132,17 @@ namespace Multiplayer.Client.Networking
                 var player = playerManager.Players
                     .FirstOrDefault(p => p.conn is SteamBaseConn conn && conn.remoteId == packet.remote);
 
+                // 1.7 lab (FIXES row 266): a join on a new channel means the client restarted its connection (after a
+                // failed join or a resync); the old player would refuse it forever, so drop the old one first. Its goodbye
+                // goes out on the old channel, which the new connection does not read.
+                if (packet.joinPacket && player is { conn: SteamBaseConn oldConn } && oldConn.sendChannel != packet.channel)
+                {
+                    ServerLog.Log($"Steam join from {packet.remote} on a new channel while {player.Username} is still " +
+                                  $"connected (channel {oldConn.sendChannel}): dropping the old connection");
+                    player.Disconnect(MpDisconnectReason.ClientLeft);
+                    player = null;
+                }
+
                 if (packet.joinPacket && player == null)
                 {
                     ConnectionBase conn = new SteamServerConn(packet.remote, packet.channel);
