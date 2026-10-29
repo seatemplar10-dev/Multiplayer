@@ -219,9 +219,11 @@ namespace Multiplayer.Client
         {
             tickTimer.Restart();
             Patches.SimGuards.ResetIfLeaked("a tick");   // 1.7 lab, FIXES row 97: same point on every PC
+            long probeStart = PerMapProbe.Start();
 
             foreach (ITickable tickable in AllTickables)
             {
+                if (PerMapProbe.Skip(tickable)) continue;
                 if (tickable.TimePerTick(tickable.DesiredTimeSpeed) == 0) continue;
                 tickable.TimeToTickThrough += 1f;
 
@@ -235,6 +237,7 @@ namespace Multiplayer.Client
             Timer += 1;
 
             tickTimer.Stop();
+            PerMapProbe.StopDoTick(probeStart, Timer);
 
             if (Multiplayer.session.desynced || Timer >= tickUntil || LongEventHandler.eventQueue.Count > 0)
             {
@@ -254,6 +257,7 @@ namespace Multiplayer.Client
 
                 tickable.TimeToTickThrough -= timePerTick;
 
+                long probeStart = PerMapProbe.Start();
                 try
                 {
                     tickable.Tick();
@@ -262,6 +266,7 @@ namespace Multiplayer.Client
                 {
                     Log.Error($"Exception during ticking {tickable}: {e}");
                 }
+                PerMapProbe.StopTickable(tickable, probeStart);
             }
         }
 
