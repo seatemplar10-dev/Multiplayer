@@ -8,6 +8,11 @@ namespace Multiplayer.Common
 {
     public class LiteNetManager : INetManager
     {
+        // A peer that sends nothing for this long is dropped. LiteNetLib's default is 5000 ms (NetManager.DisconnectTimeout);
+        // a host frozen 8 s at an autosave join point dropped the arbiter, and could drop a player. Set on every NetManager
+        // Multiplayer creates (server, LAN, arbiter, client); both ends time out on their own, so both need it.
+        public const int DisconnectTimeoutMs = 30000;
+
         public List<(LiteNetEndpoint endpoint, NetManager manager)> netManagers;
 
         private LiteNetManager(List<(LiteNetEndpoint endpoint, NetManager manager)> netManagers) =>
@@ -47,7 +52,8 @@ namespace Multiplayer.Common
                 return new NetManager(new MpServerNetListener(server, false))
                 {
                     EnableStatistics = true,
-                    IPv6Enabled = ipv6
+                    IPv6Enabled = ipv6,
+                    DisconnectTimeout = DisconnectTimeoutMs
                 };
             }
         }
@@ -86,7 +92,11 @@ namespace Multiplayer.Common
 
         public static LiteNetArbiterManager? Create(MultiplayerServer server)
         {
-            var arbiter = new NetManager(new MpServerNetListener(server, true)) { IPv6Enabled = false };
+            var arbiter = new NetManager(new MpServerNetListener(server, true))
+            {
+                IPv6Enabled = false,
+                DisconnectTimeout = LiteNetManager.DisconnectTimeoutMs
+            };
             if (!arbiter.Start(IPAddress.Loopback, IPAddress.IPv6Any, 0)) return null;
             return new LiteNetArbiterManager(arbiter);
         }
@@ -116,7 +126,8 @@ namespace Multiplayer.Common
             var lanManager = new NetManager(new MpServerNetListener(server, false))
             {
                 EnableStatistics = true,
-                IPv6Enabled = false
+                IPv6Enabled = false,
+                DisconnectTimeout = LiteNetManager.DisconnectTimeoutMs
             };
             if (!lanManager.Start(addr, IPAddress.IPv6Any, 0)) return null;
             return new LiteNetLanManager(lanManager, addr);

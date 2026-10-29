@@ -32,7 +32,8 @@ namespace Multiplayer.Client.Networking
                 EnableStatistics = true,
                 IPv6Enabled = MpUtil.SupportsIPv6(),
                 ReconnectDelay = 300,
-                MaxConnectAttempts = 8
+                MaxConnectAttempts = 8,
+                DisconnectTimeout = LiteNetManager.DisconnectTimeoutMs
             };
             netClient.Start();
             var peer = netClient.Connect(address, port, "");
