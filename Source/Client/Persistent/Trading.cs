@@ -252,7 +252,7 @@ namespace Multiplayer.Client
 
             return new FloatMenuOption("MpTradingSession".Translate(), () =>
             {
-                SwitchToMapOrWorld(entry.map);
+                SessionMapSwitch.SwitchToMapOrWorld(entry.map);
                 CameraJumper.TryJumpAndSelect(playerNegotiator);
                 Find.WindowStack.Add(new TradingWindow()
                     { selectedTab = Multiplayer.WorldComp.trading.IndexOf(this) });

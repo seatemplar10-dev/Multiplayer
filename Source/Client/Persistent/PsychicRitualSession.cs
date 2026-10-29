@@ -106,7 +106,7 @@ public class PsychicRitualSession : SemiPersistentSession, ISessionWithCreationR
     {
         return new FloatMenuOption("MpPsychicRitualSession".Translate(), () =>
         {
-            SwitchToMapOrWorld(entry.map);
+            SessionMapSwitch.SwitchToMapOrWorld(entry.map);
             OpenWindow();
         });
     }

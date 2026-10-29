@@ -178,7 +178,7 @@ namespace Multiplayer.Client.Persistent
 
             return new FloatMenuOption("MpCaravanSplittingSession".Translate(), () =>
             {
-                SwitchToMapOrWorld(entry.map);
+                SessionMapSwitch.SwitchToMapOrWorld(entry.map);
                 CameraJumper.TryJumpAndSelect(entry.pawn);
                 OpenWindow();
             });

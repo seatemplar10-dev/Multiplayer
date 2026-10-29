@@ -92,7 +92,7 @@ public class RitualSession : SemiPersistentSession
     {
         return new FloatMenuOption("MpRitualSession".Translate(), () =>
         {
-            SwitchToMapOrWorld(entry.map);
+            SessionMapSwitch.SwitchToMapOrWorld(entry.map);
             OpenWindow();
         });
     }

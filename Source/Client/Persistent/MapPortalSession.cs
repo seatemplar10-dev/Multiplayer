@@ -47,7 +47,7 @@ public class MapPortalSession : ExposableSession, ISessionWithTransferables, ISe
 
         return new FloatMenuOption("MpMapPortalSession".Translate(portal?.Label), () =>
         {
-            SwitchToMapOrWorld(Map);
+            SessionMapSwitch.SwitchToMapOrWorld(Map);
             OpenWindow();
         });
     }

@@ -127,7 +127,7 @@ namespace Multiplayer.Client
         {
             return new FloatMenuOption("MpTransportLoadingSession".Translate(), () =>
             {
-                SwitchToMapOrWorld(entry.map);
+                SessionMapSwitch.SwitchToMapOrWorld(entry.map);
                 OpenWindow();
             });
         }
