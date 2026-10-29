@@ -189,7 +189,19 @@ namespace Multiplayer.Client.Persistent
         internal static void StartFormingCaravan(Faction faction, Map map, bool reform = false, IntVec3? designatedMeetingPoint = null, PlanetTile? routePlannerWaypoint = null)
         {
             var comp = map.MpComp();
-            var session = comp.CreateCaravanFormingSession(faction, reform, null, false, designatedMeetingPoint);
+            // FIXES row 273 (v2): this faction's session already on the map = re-list the map (see RefreshTransferables)
+            var existing = comp.GetCaravanFormingSession(faction);
+            if (existing != null)
+            {
+                // The click decides the mode (form on a home map, reform elsewhere) and the hitching spot, as in vanilla
+                existing.reform = reform;
+                if (designatedMeetingPoint.HasValue)
+                    existing.meetingSpot = designatedMeetingPoint;
+                existing.RefreshTransferables();
+            }
+            var session = existing ?? comp.CreateCaravanFormingSession(faction, reform, null, false, designatedMeetingPoint);
+            if (session == null)
+                return;
 
             if (TickPatch.currentExecutingCmdIssuedBySelf)
             {

@@ -55,12 +55,53 @@ namespace Multiplayer.Client
 
         private void AddItems()
         {
+            transferables = BuildTransferables();
+        }
+
+        // FIXES row 273 (v2): list the map without CalculateAndRecacheTransferables. That also builds the window widgets,
+        // and Vehicle Framework's postfix on CreateCaravanTransferableWidgets then overwrites its static Vehicles-tab list on
+        // every PC (synced code), so one faction's click put its list into another player's open caravan window.
+        private List<TransferableOneWay> BuildTransferables()
+        {
             var dialog = new CaravanFormingProxy(sessionId, map, reform, null, mapAboutToBeRemoved, meetingSpot)
             {
-                autoSelectTravelSupplies = autoSelectTravelSupplies
+                autoSelectTravelSupplies = autoSelectTravelSupplies,
+                transferables = new List<TransferableOneWay>()
             };
-            dialog.CalculateAndRecacheTransferables();
-            transferables = dialog.transferables;
+            dialog.AddPawnsToTransferables();
+            dialog.AddItemsToTransferables();
+            return dialog.transferables;
+        }
+
+        // FIXES row 273 (v2): a form/reform click that finds this faction's session already on the map re-lists the map, as
+        // vanilla does on every open. Before, the old list stayed: a pawn that became sendable later (or a session made
+        // before the pawn arrived) never showed up until someone pressed Cancel. Counts already chosen carry over (matched by
+        // thing id); things that left the map drop out. Called from synced code only - same list on every PC.
+        public void RefreshTransferables()
+        {
+            var fresh = BuildTransferables();
+
+            // Every old count carries over, 0 too (a reform pawn the player unticked stays unticked)
+            var oldCounts = new Dictionary<int, int>();
+            if (transferables != null)
+                foreach (var tr in transferables)
+                    if (tr?.things != null)
+                        foreach (var t in tr.things)
+                            if (t != null)
+                                oldCounts[t.thingIDNumber] = tr.CountToTransfer;
+
+            foreach (var tr in fresh)
+            {
+                var old = tr.things.Find(t => oldCounts.ContainsKey(t.thingIDNumber));
+                if (old != null)
+                    tr.CountToTransfer = Math.Min(oldCounts[old.thingIDNumber], tr.MaxCount);
+            }
+
+            // Same list object: an open window of this session keeps reading the session's list
+            transferables ??= new List<TransferableOneWay>();
+            transferables.Clear();
+            transferables.AddRange(fresh);
+            uiDirty = true;
         }
 
         public CaravanFormingProxy OpenWindow(bool sound = true)
@@ -187,7 +228,8 @@ namespace Multiplayer.Client
 
         public Transferable GetTransferableByThingId(int thingId)
         {
-            return transferables.Find(tr => tr.things.Any(t => t.thingIDNumber == thingId));
+            // FIXES row 273 (v2): a thing that left the game loads back as null in an old session's list
+            return transferables.Find(tr => tr?.things != null && tr.things.Any(t => t != null && t.thingIDNumber == thingId));
         }
 
         public void Notify_CountChanged(Transferable tr)
