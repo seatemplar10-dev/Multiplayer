@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
@@ -14,8 +15,17 @@ namespace Multiplayer.Client.AsyncTime
     {
         const int ReportEvery = 2500;
 
-        public static readonly bool Enabled = GenCommandLine.CommandLineArgPassed("mppermapprobe");
-        static readonly int skipMapId = GenCommandLine.TryGetCommandLineArg("mppermapskip", out var s) && int.TryParse(s, out var id) ? id : -1;
+        // The environment variables MP_PERMAP_PROBE=1 and MP_PERMAP_SKIP=<mapId> do the same: cmd.exe splits arguments at '='.
+        public static readonly bool Enabled = GenCommandLine.CommandLineArgPassed("mppermapprobe") ||
+            Environment.GetEnvironmentVariable("MP_PERMAP_PROBE") == "1";
+        static readonly int skipMapId = ReadSkip();
+
+        static int ReadSkip()
+        {
+            string s = Environment.GetEnvironmentVariable("MP_PERMAP_SKIP");
+            if (string.IsNullOrEmpty(s)) GenCommandLine.TryGetCommandLineArg("mppermapskip", out s);
+            return int.TryParse(s, out var id) ? id : -1;
+        }
 
         static readonly Dictionary<int, long> ticksById = new();
         static readonly Dictionary<int, long> elapsedById = new();
@@ -33,7 +43,18 @@ namespace Multiplayer.Client.AsyncTime
             return true;
         }
 
-        public static long Start() => Enabled ? Stopwatch.GetTimestamp() : 0;
+        static bool announced;
+
+        public static long Start()
+        {
+            if (!Enabled) return 0;
+            if (!announced)
+            {
+                announced = true;
+                Log.Message($"[PerMapProbe] active, report every {ReportEvery} MP ticks, skip map {skipMapId}");
+            }
+            return Stopwatch.GetTimestamp();
+        }
 
         public static void StopTickable(ITickable tickable, long start)
         {
