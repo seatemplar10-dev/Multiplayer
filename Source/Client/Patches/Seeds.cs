@@ -76,7 +76,7 @@ namespace Multiplayer.Client
     // FIXES row 241: RoomTempTracker.RegenerateEqualizeCells ends with equalizeCells.Shuffle() (Verse.Rand), and every interval
     // samples 20% of that list in cycle order, so a different shuffle order is a different room temperature (1/16 C apart on
     // the two PCs ~300 ticks after a join). Regenerates run in any context (load, join, room or roof change). Seed the shuffle
-    // from the room's shape only (map id, smallest cell index, cell count; never room.ID), and sort the cells first because the
+    // from the room's shape only (map id and smallest cell index; never room.ID), and sort the cells first because the
     // pre-shuffle order follows Room.Cells (district and region order), which is history, not shape. The outer Rand stream is
     // left alone. cycleIndex is deliberately not reset: a regenerate that runs on one PC only (outside a tick) would then restart
     // that PC's cycle while the other keeps its position. Unsaved, it is 0 on both PCs after the join point's reload.
@@ -95,7 +95,8 @@ namespace Multiplayer.Client
             foreach (var cell in ___room.Cells)
                 minCell = Math.Min(minCell, map.cellIndices.CellToIndex(cell));
 
-            Rand.PushState(Gen.HashCombineInt(Gen.HashCombineInt(map.uniqueID, minCell), ___room.CellCount));
+            // Not room.CellCount: it is a lazy cache that Room.AddDistrict does not reset, so it can be stale on one PC only
+            Rand.PushState(Gen.HashCombineInt(map.uniqueID, minCell));
             __state = true;
         }
 
@@ -130,7 +131,7 @@ namespace Multiplayer.Client
             foreach (var cell in cells)
                 hash = Gen.HashCombineInt(hash, map.cellIndices.CellToIndex(cell));
 
-            Log.Message($"Multiplayer {ProbeArg}: mpTick={TickPatch.Timer} mapTick={map.AsyncTime().mapTicks} map={map.uniqueID} roomMinCell={minCell} roomCells={room.CellCount} equalizeCells={cells.Count} orderHash={hash} ticking={Multiplayer.Ticking} inInterface={Multiplayer.InInterface}");
+            Log.Message($"Multiplayer {ProbeArg}: mpTick={TickPatch.Timer} mapTick={map.AsyncTime()?.mapTicks} map={map.uniqueID} roomMinCell={minCell} equalizeCells={cells.Count} orderHash={hash} ticking={Multiplayer.Ticking} inInterface={Multiplayer.InInterface}");
         }
     }
 
