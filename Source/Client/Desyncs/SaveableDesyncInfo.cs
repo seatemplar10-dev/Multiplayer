@@ -118,6 +118,8 @@ public class SaveableDesyncInfo(
             .AppendLine($"Multiplayer Debug Build - Client|||{MpVersion.IsDebug}")
             .AppendLine($"Multiplayer Debug Mode - Host|||{Multiplayer.GameComp.debugMode}")
             .AppendLine($"Rimworld Developer Mode - Client|||{Prefs.DevMode}")
+            .AppendLine($"Desync Tracing Mode - Client|||{Multiplayer.settings.desyncTracingMode}{(DeferredStackTracing.HashManagedFrames ? " +frame hash" : "")}")
+            .AppendLine($"Fast Trace Cache - Client|||{(FastManagedTrace.Supported ? FastManagedTrace.Stats : "unwinder not supported here")}")
             .AppendLine("\n###Server Info###")
             .AppendLine($"Player Count|||{Multiplayer.session.players.Count}")
             .AppendLine($"Async time active|||{Multiplayer.GameComp.asyncTime}")

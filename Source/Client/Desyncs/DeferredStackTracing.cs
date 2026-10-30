@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using HarmonyLib;
 using Multiplayer.Client.Patches;
@@ -35,25 +36,32 @@ namespace Multiplayer.Client.Desyncs
         {
             if (Native.LmfPtr == 0)
             {
-                // CoreCLR (RimWorld 1.7) has no Mono LMF to walk, so Fast records nothing there. A managed StackTrace
-                // per traced call (each Rand.Value/Rand.Int, thing spawn and despawn, unique id while ticking) costs
-                // microseconds instead of the Mono walk's fraction of one, so it only runs in the Slow mode. Slow is
-                // not saved in the settings file (MpSettings.ExposeData); set it for one run with -mptracemode=Slow.
-                // The arbiter is started with the host's current mode (ArbiterLauncher).
-                // FIXES row 267: Lean records the same trace entries with no stack (~15 ns instead of ~5 us at depth
-                // 40). The trace hash is the random state alone in both modes, so Lean and Slow PCs compare and the
-                // desync index is still found; only the Lean side's report has no frames. With -mptraceframehash the
-                // frames are hashed, so Lean then traces like Slow.
+                // CoreCLR (RimWorld 1.7) has no Mono LMF to walk. The modes there, per traced call (each Rand.Value/Rand.Int,
+                // thing spawn and despawn, unique id while ticking):
+                // - Fast (default, FastTrace): the OS unwinder's return addresses (~0.3 us at 40 frames) and a cache of the
+                //   frames System.Diagnostics.StackTrace gave the first time that exact stack was seen. Same frames as Slow.
+                // - Slow (ManagedTrace): one System.Diagnostics.StackTrace each time (~5-20 us).
+                // - Lean (FIXES row 267, LeanTrace): the entry with no stack (~15 ns).
+                // The trace hash is the random state alone in every mode (tiered compilation can inline a frame away in one
+                // process and not another), so Fast, Slow and Lean PCs compare and the desync index is found. With
+                // -mptraceframehash the frames are hashed, and Lean then traces like Slow. The mode is not saved in the
+                // settings file (MpSettings.ExposeData); -mptracemode sets it for one run. The arbiter is started with the
+                // host's current mode (ArbiterLauncher).
                 if (Native.IsMono) return;
-                var mode = Multiplayer.settings?.desyncTracingMode;
-                if (mode == DesyncTracingMode.Lean && !HashManagedFrames)
+                if (!ShouldAddStackTraceForDesyncLog()) return;
+                switch (Multiplayer.settings?.desyncTracingMode)
                 {
-                    if (ShouldAddStackTraceForDesyncLog())
-                        LeanTrace();
+                    case DesyncTracingMode.Fast:
+                        FastTrace();
+                        break;
+                    case DesyncTracingMode.Slow:
+                        ManagedTrace();
+                        break;
+                    case DesyncTracingMode.Lean:
+                        if (HashManagedFrames) ManagedTrace();
+                        else LeanTrace();
+                        break;
                 }
-                else if ((mode == DesyncTracingMode.Slow || mode == DesyncTracingMode.Lean) &&
-                         ShouldAddStackTraceForDesyncLog())
-                    ManagedTrace();
                 return;
             }
 
@@ -118,14 +126,13 @@ namespace Multiplayer.Client.Desyncs
             return false;
         }
 
-        private static void ManagedTrace()
+        // skipFrames: this frame and Postfix by default, like the Mono walk skips Postfix
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void ManagedTrace(int skipFrames = 2)
         {
             var logItem = StackTraceLogItemManaged.GetFromPool();
-            // Skip this frame and Postfix, like the Mono walk skips Postfix
-            var frames = new StackTrace(2, false).GetFrames();
-            int hash = 0;
+            var frames = new StackTrace(skipFrames, false).GetFrames();
             int depth = 0;
-            bool hashFrames = HashManagedFrames;
 
             foreach (var frame in frames)
             {
@@ -133,20 +140,71 @@ namespace Multiplayer.Client.Desyncs
 
                 // Harmony's replacement for a patched method shows as a dynamic method; on CoreCLR Harmony maps it
                 // back to the original
-                var method = Harmony.GetMethodFromStackframe(frame);
-                logItem.methods[depth++] = method;
-
-                if (method == null || !hashFrames)
-                    continue;
-
-                if (!managedNameHashes.TryGetValue(method, out int nameHash))
-                    managedNameHashes[method] = nameHash = GenText.StableStringHash(method.FullDescription());
-
-                hash = Gen.HashCombineInt(hash, nameHash);
+                logItem.methods[depth++] = Harmony.GetMethodFromStackframe(frame);
             }
+
+            AddManagedTrace(logItem, depth);
+        }
+
+        private static void AddManagedTrace(StackTraceLogItemManaged logItem, int depth)
+        {
+            int hash = 0;
+            bool hashFrames = HashManagedFrames;
+
+            if (hashFrames)
+                for (int i = 0; i < depth; i++)
+                {
+                    var method = logItem.methods[i];
+                    if (method == null) continue;
+
+                    if (!managedNameHashes.TryGetValue(method, out int nameHash))
+                        managedNameHashes[method] = nameHash = GenText.StableStringHash(method.FullDescription());
+
+                    hash = Gen.HashCombineInt(hash, nameHash);
+                }
 
             // The depth varies with inlining like the frames do
             Multiplayer.game.sync.TryAddStackTraceForDesyncLogRaw(logItem, depth, hash, hashDepth: hashFrames);
+        }
+
+        static bool fastTraceDisabled;
+
+        // Fast on CoreCLR: FastManagedTrace gives the frames ManagedTrace would give, from a cache keyed by the return
+        // addresses. A stack it can't vouch for takes ManagedTrace. Where the unwinder can't run (not Windows x64) or
+        // after an unexpected error, Fast records Lean entries: same entries and hashes as the other modes, no stack.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void FastTrace()
+        {
+            if (fastTraceDisabled || !FastManagedTrace.Supported)
+            {
+                if (HashManagedFrames) ManagedTrace(3);
+                else LeanTrace();
+                return;
+            }
+
+            MethodBase[] frames;
+            try
+            {
+                // Skips this frame and Postfix, like ManagedTrace
+                frames = FastManagedTrace.Capture(2);
+            }
+            catch (Exception e)
+            {
+                fastTraceDisabled = true;
+                Log.Error($"Multiplayer: Fast desync tracing failed, Fast records Lean traces from now on: {e}");
+                LeanTrace();
+                return;
+            }
+
+            if (frames == null)
+            {
+                ManagedTrace(3);
+                return;
+            }
+
+            var logItem = StackTraceLogItemManaged.GetFromPool();
+            Array.Copy(frames, logItem.methods, frames.Length);
+            AddManagedTrace(logItem, frames.Length);
         }
 
         public const string LeanInfo = "Lean trace: no stack";
