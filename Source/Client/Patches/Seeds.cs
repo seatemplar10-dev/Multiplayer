@@ -78,7 +78,8 @@ namespace Multiplayer.Client
     // the two PCs ~300 ticks after a join). Regenerates run in any context (load, join, room or roof change). Seed the shuffle
     // from the room's shape only (map id, smallest cell index, cell count; never room.ID), and sort the cells first because the
     // pre-shuffle order follows Room.Cells (district and region order), which is history, not shape. The outer Rand stream is
-    // left alone. cycleIndex is not saved and vanilla never resets it, so a fresh regenerate starts both PCs at 0.
+    // left alone. cycleIndex is deliberately not reset: a regenerate that runs on one PC only (outside a tick) would then restart
+    // that PC's cycle while the other keeps its position. Unsaved, it is 0 on both PCs after the join point's reload.
     // Lab probe: -mplabequalize logs one line per regenerate (default off).
     [HarmonyPatch(typeof(RoomTempTracker), "RegenerateEqualizeCells")]
     static class SeedRoomTempEqualizeCells
@@ -99,7 +100,7 @@ namespace Multiplayer.Client
         }
 
         // Finalizer, not Postfix: the PopState must run even if the original threw
-        static void Finalizer(Room ___room, Map map, List<IntVec3> ___equalizeCells, ref int ___cycleIndex, bool __state)
+        static void Finalizer(Room ___room, Map map, List<IntVec3> ___equalizeCells, bool __state)
         {
             if (!__state) return;
 
@@ -109,7 +110,6 @@ namespace Multiplayer.Client
                 // sort to a canonical order and shuffle again, so the result no longer depends on the incoming order
                 ___equalizeCells.Sort((a, b) => map.cellIndices.CellToIndex(a).CompareTo(map.cellIndices.CellToIndex(b)));
                 ___equalizeCells.Shuffle();
-                ___cycleIndex = 0;
 
                 if (Probe)
                     LogProbe(___room, map, ___equalizeCells);
