@@ -174,7 +174,11 @@ namespace Multiplayer.Client
                 (SyncWorker data, ref HediffComp hediffComp) => {
                     if (data.isWriting) {
                         if (hediffComp != null) {
-                            ushort index = (ushort)Array.IndexOf(hediffCompTypes, hediffComp.GetType());
+                            var typeIndex = Array.IndexOf(hediffCompTypes, hediffComp.GetType());
+                            // -1 would wrap to 65535, the reader's null sentinel, while parent and compIndex are still written
+                            if (typeIndex < 0)
+                                throw new SerializationException($"Unknown HediffComp type {hediffComp.GetType()}");
+                            ushort index = (ushort)typeIndex;
                             data.Write(index);
                             data.Write(hediffComp.parent);
                             var tempComp = hediffComp;
@@ -189,15 +193,20 @@ namespace Multiplayer.Client
                             return;
                         }
                         HediffWithComps parent = data.Read<HediffWithComps>();
+                        // Always consume compIndex: the writer sends it after the parent, so a null parent must not leave it unread
+                        var compIndex = data.Read<ushort>();
                         if (parent == null) {
                             return;
                         }
                         Type compType = hediffCompTypes[index];
-                        var compIndex = data.Read<ushort>();
                         if (compIndex <= 0)
                             hediffComp = parent.comps.Find(c => c.props.compClass == compType);
                         else
-                            hediffComp = parent.comps.Where(c => c.props.compClass == compType).ElementAt(compIndex);
+                        {
+                            hediffComp = parent.comps.Where(c => c.props.compClass == compType).ElementAtOrDefault(compIndex);
+                            if (hediffComp == null)
+                                Log.Warning($"Multiplayer :: SyncDictionary.HediffComp: no comp of type {compType} at index {compIndex} on {parent}");
+                        }
                     }
                 }, true // implicit
             },
@@ -300,10 +309,11 @@ namespace Multiplayer.Client
                 (ByteReader data) => {
                     BillStack billStack = ReadSync<BillStack>(data);
 
+                    // Always consume loadID: the writer sends it after the bill stack, so a null stack must not leave it unread
+                    int id = data.ReadInt32();
+
                     if (billStack == null)
                         return null;
-
-                    int id = data.ReadInt32();
 
                     return billStack.Bills.Find(bill => bill.loadID == id);
                 }, true
@@ -329,7 +339,10 @@ namespace Multiplayer.Client
                 (SyncWorker data, ref AbilityComp comp) => {
                     if (data.isWriting) {
                         if (comp != null) {
-                            ushort index = (ushort)Array.IndexOf(abilityCompTypes, comp.GetType());
+                            var typeIndex = Array.IndexOf(abilityCompTypes, comp.GetType());
+                            if (typeIndex < 0) // -1 would wrap to the null sentinel while the parent is still written
+                                throw new SerializationException($"Unknown AbilityComp type {comp.GetType()}");
+                            ushort index = (ushort)typeIndex;
                             data.Write(index);
                             data.Write(comp.parent);
                         } else {
@@ -362,10 +375,21 @@ namespace Multiplayer.Client
                     }
                     else
                     {
+                        // The writer sends loadID only when DirectOwner was non-null on its side. The owner marker is a ushort
+                        // (ushort.MaxValue = null on the wire), so peek it: a null owner read back from a non-null marker
+                        // (impl object not found here) still has its loadID in the stream and must consume it.
+                        var reader = ((ReadingSyncWorker)sync).Reader;
+                        var pos = reader.Position;
+                        var ownerWasWritten = reader.ReadUShort() != ushort.MaxValue;
+                        reader.Seek(pos);
+
                         var owner = sync.Read<IVerbOwner>();
-                        if (owner == null)
+                        if (!ownerWasWritten)
                             return;
                         var loadID = sync.Read<string>();
+
+                        if (owner == null)
+                            return;
 
                         verb = owner.VerbTracker.AllVerbs.Find(ve => ve.loadID == loadID);
 
@@ -554,10 +578,12 @@ namespace Multiplayer.Client
                 (ByteReader data) => {
                     var settable = ReadSync<IPlantToGrowSettable>(data);
 
+                    // Always consume the settables list: the writer sends it after settable, so a null settable must not leave it unread
+                    var settables = ReadSync<List<IPlantToGrowSettable>>(data);
+
                     if (settable == null)
                         return null;
 
-                    var settables = ReadSync<List<IPlantToGrowSettable>>(data);
                     settables.RemoveAll(s => s == null);
 
                     var command = MpUtil.NewObjectNoCtor<Command_SetPlantToGrow>();
@@ -588,10 +614,13 @@ namespace Multiplayer.Client
                 },
                 (ByteReader data) => {
                     CompTransporter transporter = ReadSync<CompTransporter>(data);
+
+                    // Always consume the transporters list: the writer sends it after transComp, so a null transComp must not leave it unread
+                    List<CompTransporter> transporters = ReadSync<List<CompTransporter>>(data);
+
                     if (transporter == null)
                        return null;
 
-                    List<CompTransporter> transporters = ReadSync<List<CompTransporter>>(data);
                     transporters.RemoveAll(r => r == null);
 
                     Command_LoadToTransporter command = new Command_LoadToTransporter{
@@ -868,7 +897,11 @@ namespace Multiplayer.Client
                 (SyncWorker data, ref ThingComp comp) => {
                     if (data.isWriting) {
                         if (comp != null) {
-                            ushort index = (ushort)Array.IndexOf(thingCompTypes, comp.GetType());
+                            var typeIndex = Array.IndexOf(thingCompTypes, comp.GetType());
+                            // -1 would wrap to 65535, the reader's null sentinel, while parent and compIndex are still written
+                            if (typeIndex < 0)
+                                throw new SerializationException($"Unknown ThingComp type {comp.GetType()}");
+                            ushort index = (ushort)typeIndex;
                             data.Write(index);
                             data.Write(comp.parent);
                             var tempComp = comp;
@@ -883,15 +916,20 @@ namespace Multiplayer.Client
                             return;
                         }
                         ThingWithComps parent = data.Read<ThingWithComps>();
+                        // Always consume compIndex: the writer sends it after the parent, so a null parent must not leave it unread
+                        var compIndex = data.Read<ushort>();
                         if (parent == null) {
                             return;
                         }
                         Type compType = thingCompTypes[index];
-                        var compIndex = data.Read<ushort>();
                         if (compIndex <= 0)
                             comp = parent.AllComps.Find(c => c.props.compClass == compType);
                         else
-                            comp = parent.AllComps.Where(c => c.props.compClass == compType).ElementAt(compIndex);
+                        {
+                            comp = parent.AllComps.Where(c => c.props.compClass == compType).ElementAtOrDefault(compIndex);
+                            if (comp == null)
+                                Log.Warning($"Multiplayer :: SyncDictionary.ThingComp: no comp of type {compType} at index {compIndex} on {parent}");
+                        }
                     }
                 }, true // implicit
             },
@@ -944,7 +982,10 @@ namespace Multiplayer.Client
                 (SyncWorker data, ref MapComponent comp) => {
                     if (data.isWriting) {
                         if (comp != null) {
-                            ushort index = (ushort)Array.IndexOf(mapCompTypes, comp.GetType());
+                            var typeIndex = Array.IndexOf(mapCompTypes, comp.GetType());
+                            if (typeIndex < 0) // -1 would wrap to the null sentinel while the map is still written
+                                throw new SerializationException($"Unknown MapComponent type {comp.GetType()}");
+                            ushort index = (ushort)typeIndex;
                             data.Write(index);
                             data.Write(comp.map);
                         } else {
@@ -988,7 +1029,10 @@ namespace Multiplayer.Client
                 (SyncWorker data, ref WorldObjectComp comp) => {
                     if (data.isWriting) {
                         if (comp != null) {
-                            ushort index = (ushort)Array.IndexOf(worldObjectCompTypes, comp.GetType());
+                            var typeIndex = Array.IndexOf(worldObjectCompTypes, comp.GetType());
+                            if (typeIndex < 0) // -1 would wrap to the null sentinel while the parent is still written
+                                throw new SerializationException($"Unknown WorldObjectComp type {comp.GetType()}");
+                            ushort index = (ushort)typeIndex;
                             data.Write(index);
                             data.Write(comp.parent);
                         } else {
@@ -1012,7 +1056,10 @@ namespace Multiplayer.Client
                 (SyncWorker data, ref WorldComponent comp) => {
                     if (data.isWriting) {
                         if (comp != null) {
-                            ushort index = (ushort)Array.IndexOf(worldCompTypes, comp.GetType());
+                            var typeIndex = Array.IndexOf(worldCompTypes, comp.GetType());
+                            if (typeIndex < 0) // -1 would wrap to the null sentinel while the world is still written
+                                throw new SerializationException($"Unknown WorldComponent type {comp.GetType()}");
+                            ushort index = (ushort)typeIndex;
                             data.Write(index);
                             data.Write(comp.world);
                         } else {

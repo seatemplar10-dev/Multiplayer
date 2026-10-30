@@ -116,9 +116,11 @@ namespace Multiplayer.Client
                 },
                 (ByteReader data) => {
                     var lord = ReadSync<Lord>(data);
-                    if (lord == null) return null;
 
+                    // Always consume the bestower: the writer sends it after the lord, so a null lord must not leave it unread
                     var bestower = ReadSync<Pawn>(data);
+
+                    if (lord == null) return null;
                     if (bestower == null) return null;
 
                     return (Command_BestowerCeremony)(lord.curLordToil as LordToil_BestowingCeremony_Wait)?.
@@ -196,9 +198,12 @@ namespace Multiplayer.Client
                 },
                 (ByteReader data) => {
                     var assignments = (MpRitualAssignments)ReadSync<RitualRoleAssignments>(data);
+
+                    // Always consume the ritual: the writer sends it after the assignments, so null assignments must not leave it unread
+                    var ritual = ReadSync<Precept_Ritual>(data); // todo handle ritual becoming null?
+
                     if (assignments == null) return null;
 
-                    var ritual = ReadSync<Precept_Ritual>(data); // todo handle ritual becoming null?
                     return new PawnRitualRoleSelectionWidget(assignments, ritual, assignments.session.data.target, assignments.session.data.outcome);
                 }
             },
@@ -210,9 +215,12 @@ namespace Multiplayer.Client
                 },
                 (ByteReader data) => {
                     var assignment = (MpRitualAssignments)ReadSync<RitualRoleAssignments>(data);
+
+                    // Always consume the ritual: the writer sends it after the assignments, so null assignments must not leave it unread
+                    var ritual = ReadSync<Precept_Ritual>(data); // todo handle ritual becoming null?
+
                     if (assignment == null) return null;
 
-                    var ritual = ReadSync<Precept_Ritual>(data); // todo handle ritual becoming null?
                     return new Dialog_BeginRitual(assignment, ritual, assignment.ritualTarget, assignment.session.data.outcome);
                 }
             },
@@ -391,9 +399,12 @@ namespace Multiplayer.Client
                 (ByteReader data) =>
                 {
                     var assignments = (MpPsychicRitualAssignments)ReadSync<PsychicRitualRoleAssignments>(data);
+
+                    // Always consume the ritual def: the writer sends it after the assignments, so null assignments must not leave it unread
+                    var ritual = ReadSync<PsychicRitualDef>(data); // todo handle ritual becoming null?
+
                     if (assignments == null) return null;
 
-                    var ritual = ReadSync<PsychicRitualDef>(data); // todo handle ritual becoming null?
                     return new PawnPsychicRitualRoleSelectionWidget(ritual, assignments.session.candidatePool, assignments);
                 }
             },
