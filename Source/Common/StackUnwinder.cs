@@ -133,7 +133,7 @@ public static unsafe class StackUnwinder
     }
 
     // One frame with the OS unwinder. Fills the recipe for this return address. False = stop the walk.
-    static bool ExactStep(ref ulong rsp, ref ulong rip, ulong* regs, ulong hi, ref Recipe rec)
+    static bool ExactStep(ref ulong rsp, ref ulong rip, ulong* regs, ulong lo, ulong hi, ref Recipe rec)
     {
         ulong imageBase;
         void* fe = pLookup(rip, &imageBase, null);
@@ -146,6 +146,14 @@ public static unsafe class StackUnwinder
         // and the caller takes the Slow path, which knows about hijacks. No recipe is kept for such an address.
         if (imageBase + ((uint*)fe)[0] == rip)
             return false;
+
+        // The frame register's value comes from earlier recipes: check it before RtlVirtualUnwind reads through it
+        uint unwindRva0 = ((uint*)fe)[2];
+        if ((unwindRva0 & 1) == 0)
+        {
+            int frameReg0 = ((byte*)(imageBase + unwindRva0))[3] & 0xF;
+            if (frameReg0 != 0 && (regs[frameReg0] < lo || regs[frameReg0] >= hi)) return false;
+        }
 
         byte* raw = stackalloc byte[ContextSize + 16];
         byte* ctx = (byte*)(((ulong)raw + 15) & ~15UL);
@@ -209,6 +217,7 @@ public static unsafe class StackUnwinder
     // complete = the walk reached the end of the stack (a zero return address) within cap frames; false = it stopped at
     // cap or at a frame it could not unwind.
     [MethodImpl(MethodImplOptions.NoInlining)]
+    [SkipLocalsInit]
     public static int Walk(ulong* buf, int cap, out bool complete)
     {
         complete = false;
@@ -225,6 +234,11 @@ public static unsafe class StackUnwinder
         ulong rsp = *(ulong*)(ctx + CtxRsp);
         ulong rip = *(ulong*)(ctx + CtxRip);
 
+        // Every frame this walk reads lies above Walk's own rsp. GetCurrentThreadStackLimits gives the reserved range,
+        // whose low end is not committed: reading there would fault, so the low bound is Walk's rsp.
+        if (rsp < lo || rsp >= hi) return 0;
+        lo = rsp;
+
         int n = 0;
         while (true)
         {
@@ -235,7 +249,7 @@ public static unsafe class StackUnwinder
             {
                 var fresh = new Recipe();
                 ulong ip0 = rip;
-                if (!ExactStep(ref rsp, ref rip, regs, hi, ref fresh)) break;
+                if (!ExactStep(ref rsp, ref rip, regs, lo, hi, ref fresh)) break;
                 if (!found)
                 {
                     fresh.ip = ip0;

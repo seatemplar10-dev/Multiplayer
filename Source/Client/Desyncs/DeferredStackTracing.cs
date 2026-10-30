@@ -32,6 +32,9 @@ namespace Multiplayer.Client.Desyncs
         private static bool SupportsDeferredStackTracing =>
             RuntimeInformation.ProcessArchitecture is Architecture.X64 or Architecture.X86;
 
+        // NoInlining and no tail calls below: the traces skip a fixed number of frames (this one and the trace method),
+        // which only holds while both frames exist
+        [MethodImpl(MethodImplOptions.NoInlining)]
         public static void Postfix()
         {
             if (Native.LmfPtr == 0)
@@ -62,6 +65,7 @@ namespace Multiplayer.Client.Desyncs
                         else LeanTrace();
                         break;
                 }
+                traceCalls++; // keeps the calls above out of tail position
                 return;
             }
 
@@ -168,6 +172,8 @@ namespace Multiplayer.Client.Desyncs
         }
 
         static bool fastTraceDisabled;
+        static int traceCalls;
+        const int MaxIncompleteInARow = 256;
 
         // Fast on CoreCLR: FastManagedTrace gives the frames ManagedTrace would give, from a cache keyed by the return
         // addresses. A stack it can't vouch for takes ManagedTrace. Where the unwinder can't run (not Windows x64) or
@@ -177,8 +183,8 @@ namespace Multiplayer.Client.Desyncs
         {
             if (fastTraceDisabled || !FastManagedTrace.Supported)
             {
-                if (HashManagedFrames) ManagedTrace(3);
-                else LeanTrace();
+                FastFallback();
+                traceCalls++; // keeps FastFallback out of tail position: it skips this frame
                 return;
             }
 
@@ -192,19 +198,38 @@ namespace Multiplayer.Client.Desyncs
             {
                 fastTraceDisabled = true;
                 Log.Error($"Multiplayer: Fast desync tracing failed, Fast records Lean traces from now on: {e}");
-                LeanTrace();
+                FastFallback();
                 return;
             }
 
             if (frames == null)
             {
+                // The walk did not reach the end of the stack. If that keeps happening (a frame without unwind info on
+                // this machine), every call would pay the walk and a StackTrace: stop trying.
+                if (FastManagedTrace.IncompleteInARow >= MaxIncompleteInARow)
+                {
+                    fastTraceDisabled = true;
+                    Log.Warning($"Multiplayer: Fast desync tracing can't walk this stack ({FastManagedTrace.Stats}); " +
+                                "Fast records Lean traces from now on");
+                }
                 ManagedTrace(3);
+                traceCalls++; // keeps ManagedTrace(3) out of tail position: a tail call would drop this frame
                 return;
             }
 
             var logItem = StackTraceLogItemManaged.GetFromPool();
             Array.Copy(frames, logItem.methods, frames.Length);
             AddManagedTrace(logItem, frames.Length);
+        }
+
+        // Fast where it can't capture: Lean entries, or Slow ones with -mptraceframehash (Lean hashes nothing)
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void FastFallback()
+        {
+            // Called from FastTrace: skip this frame, FastTrace and Postfix
+            if (HashManagedFrames) ManagedTrace(4);
+            else LeanTrace();
+            traceCalls++; // keeps ManagedTrace(4) out of tail position
         }
 
         public const string LeanInfo = "Lean trace: no stack";

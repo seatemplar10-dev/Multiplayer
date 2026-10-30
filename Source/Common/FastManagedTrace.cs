@@ -18,7 +18,8 @@ public static unsafe class FastManagedTrace
 {
     public const int MaxFrames = 32;    // StackTraceLogItemRaw.MaxDepth
     public const int MaxWalkFrames = 512;  // deeper stacks take the Slow path
-    public const int MaxEntries = 1 << 18; // 24-byte slots, at most half full: ~12 MB; the table starts over past this
+    public const int MaxEntries = 1 << 18;   // keys: 24-byte slots, at most half full (~12 MB)
+    public const int MaxFrameSets = 1 << 16; // interned frame lists, ~300 B each (~20 MB); past either limit all starts over
 
     struct Entry
     {
@@ -34,6 +35,7 @@ public static unsafe class FastManagedTrace
     static readonly Dictionary<FrameSetKey, int> frameSetIndex = new();
 
     public static long Hits, Misses, Incomplete, Resets;
+    public static int IncompleteInARow;
     public static int Entries => count;
     public static int FrameSets => frameSets.Count;
 
@@ -43,12 +45,16 @@ public static unsafe class FastManagedTrace
         $"entries {count}, frame lists {frameSets.Count}, recipes {StackUnwinder.RecipeCount}, hits {Hits}, misses {Misses}, " +
         $"incomplete walks {Incomplete}, exact-unwind frames {StackUnwinder.ExactFrames}, resets {Resets}";
 
+    // Also forgets the unwind recipes: the code of a collected dynamic method can be reused by another method, and a
+    // later Harmony patch changes what GetMethodFromStackframe returns. Called when a multiplayer game starts.
     public static void Reset()
     {
         table = new Entry[1 << 12];
         count = 0;
         frameSets.Clear();
         frameSetIndex.Clear();
+        IncompleteInARow = 0;
+        StackUnwinder.ResetRecipes();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -97,6 +103,7 @@ public static unsafe class FastManagedTrace
     // (at most MaxFrames). Null = take the Slow path for this call (the walk did not reach the end of the stack).
     // The returned array is shared between traces: read it, never write it.
     [MethodImpl(MethodImplOptions.NoInlining)]
+    [SkipLocalsInit]
     public static MethodBase?[]? Capture(int callerSkip)
     {
         ulong* buf = stackalloc ulong[MaxWalkFrames];
@@ -104,15 +111,17 @@ public static unsafe class FastManagedTrace
         if (!complete)
         {
             Incomplete++;
+            IncompleteInARow++;
             return null;
         }
+        IncompleteInARow = 0;
 
         Hash(buf, n, out var h1, out var h2);
-        ref var e = ref Find(h1, h2, out bool found);
+        int hit = Find(h1, h2, out bool found).frames;
         if (found)
         {
             Hits++;
-            return frameSets[e.frames];
+            return frameSets[hit];
         }
 
         Misses++;
@@ -123,19 +132,22 @@ public static unsafe class FastManagedTrace
         for (int i = 0; i < depth; i++)
             frames[i] = Harmony.GetMethodFromStackframe(st[i]);
 
+        if (count >= MaxEntries || frameSets.Count >= MaxFrameSets)
+        {
+            Resets++;
+            Reset();
+        }
+
         int index = Intern(frames);
         var result = frameSets[index];
-        e.h1 = h1;
-        e.h2 = h2;
-        e.frames = index;
-        if (++count * 2 > table.Length)
+        // Found again: resolving can run other code (type loads), so a slot found before it may be stale
+        ref var slot = ref Find(h1, h2, out found);
+        if (!found)
         {
-            if (count > MaxEntries)
-            {
-                Resets++;
-                Reset();
-            }
-            else Grow();
+            slot.h1 = h1;
+            slot.h2 = h2;
+            slot.frames = index;
+            if (++count * 2 > table.Length) Grow();
         }
 
         return result;

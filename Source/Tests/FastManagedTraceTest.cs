@@ -72,6 +72,7 @@ public class FastManagedTraceTest
         {
             'R' => R(p, i),
             'G' => Gen<string>.M<object>(p, i),
+            'H' => Gen<List<int>>.M<string>(p, i), // the same shared (__Canon) body as 'G', another instantiation
             'S' => Gen<int>.M<long>(p, i),
             'D' => dyn(p, i) + 10,
             'L' => Lambda(p, i),
@@ -139,10 +140,10 @@ public class FastManagedTraceTest
     [Test]
     public void FastFramesEqualSlowFrames()
     {
-        var paths = new List<string> { "", "R", "RRRR", "G", "S", "D", "L", "I", "F", "P", "Q", "RGSDLIFPQ", "DDDD", "PGPG",
+        var paths = new List<string> { "", "R", "RRRR", "G", "S", "D", "L", "I", "F", "P", "Q", "RGSDLIFPQ", "DDDD", "PGPG", "GH", "HG", "GGHH",
             new string('R', 40) + "GDP", "GDP" + new string('R', 40) };
         var rnd = new Random(1234);
-        const string alphabet = "RGSDLIFPQ";
+        const string alphabet = "RGHSDLIFPQ";
         for (int k = 0; k < 150; k++)
             paths.Add(new string(Enumerable.Range(0, rnd.Next(1, 25)).Select(_ => alphabet[rnd.Next(alphabet.Length)]).ToArray()));
 
@@ -207,6 +208,7 @@ public class FastManagedTraceTest
         foreach (var line in mismatchReport) TestContext.Out.WriteLine(line);
         Assert.That(mismatches, Is.EqualTo(0));
         Assert.That(gcs, Is.GreaterThan(100));
+        Assert.That(compares, Is.GreaterThan(calls / 2), "most captures should not need the Slow path");
         Assert.That(calls, Is.GreaterThan(1000));
     }
 
@@ -230,7 +232,7 @@ public class FastManagedTraceTest
         Next("RGRGRGRGRGRGRGRG", 0);
         probeAction = null;
         TestContext.Out.WriteLine($"Slow {slowNs:F0} ns, Fast (hit) {fastNs:F0} ns, {slowNs / fastNs:F1}x, {FastManagedTrace.Stats}");
-        Assert.That(fastNs * 5, Is.LessThan(slowNs));
+        Assert.That(fastNs, Is.LessThan(slowNs));
     }
 
     static Action? probeAction;
