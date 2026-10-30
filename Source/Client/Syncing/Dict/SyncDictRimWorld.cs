@@ -339,7 +339,10 @@ namespace Multiplayer.Client
                 (SyncWorker data, ref AbilityComp comp) => {
                     if (data.isWriting) {
                         if (comp != null) {
-                            ushort index = (ushort)Array.IndexOf(abilityCompTypes, comp.GetType());
+                            var typeIndex = Array.IndexOf(abilityCompTypes, comp.GetType());
+                            if (typeIndex < 0) // -1 would wrap to the null sentinel while the parent is still written
+                                throw new SerializationException($"Unknown AbilityComp type {comp.GetType()}");
+                            ushort index = (ushort)typeIndex;
                             data.Write(index);
                             data.Write(comp.parent);
                         } else {
@@ -979,7 +982,10 @@ namespace Multiplayer.Client
                 (SyncWorker data, ref MapComponent comp) => {
                     if (data.isWriting) {
                         if (comp != null) {
-                            ushort index = (ushort)Array.IndexOf(mapCompTypes, comp.GetType());
+                            var typeIndex = Array.IndexOf(mapCompTypes, comp.GetType());
+                            if (typeIndex < 0) // -1 would wrap to the null sentinel while the map is still written
+                                throw new SerializationException($"Unknown MapComponent type {comp.GetType()}");
+                            ushort index = (ushort)typeIndex;
                             data.Write(index);
                             data.Write(comp.map);
                         } else {
@@ -1023,7 +1029,10 @@ namespace Multiplayer.Client
                 (SyncWorker data, ref WorldObjectComp comp) => {
                     if (data.isWriting) {
                         if (comp != null) {
-                            ushort index = (ushort)Array.IndexOf(worldObjectCompTypes, comp.GetType());
+                            var typeIndex = Array.IndexOf(worldObjectCompTypes, comp.GetType());
+                            if (typeIndex < 0) // -1 would wrap to the null sentinel while the parent is still written
+                                throw new SerializationException($"Unknown WorldObjectComp type {comp.GetType()}");
+                            ushort index = (ushort)typeIndex;
                             data.Write(index);
                             data.Write(comp.parent);
                         } else {
@@ -1047,7 +1056,10 @@ namespace Multiplayer.Client
                 (SyncWorker data, ref WorldComponent comp) => {
                     if (data.isWriting) {
                         if (comp != null) {
-                            ushort index = (ushort)Array.IndexOf(worldCompTypes, comp.GetType());
+                            var typeIndex = Array.IndexOf(worldCompTypes, comp.GetType());
+                            if (typeIndex < 0) // -1 would wrap to the null sentinel while the world is still written
+                                throw new SerializationException($"Unknown WorldComponent type {comp.GetType()}");
+                            ushort index = (ushort)typeIndex;
                             data.Write(index);
                             data.Write(comp.world);
                         } else {
