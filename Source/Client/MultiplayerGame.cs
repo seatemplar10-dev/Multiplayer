@@ -37,6 +37,8 @@ namespace Multiplayer.Client
         public MultiplayerGame()
         {
             DeferredStackTracing.acc = 0;
+            // Patches made before this game are final, and code addresses of collected dynamic methods are forgotten
+            FastManagedTrace.Reset();
 
             Toils_Ingest.cardinals = GenAdj.CardinalDirections.ToList();
             Toils_Ingest.diagonals = GenAdj.DiagonalDirections.ToList();
