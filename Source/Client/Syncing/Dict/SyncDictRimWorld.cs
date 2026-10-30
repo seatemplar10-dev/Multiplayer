@@ -189,15 +189,16 @@ namespace Multiplayer.Client
                             return;
                         }
                         HediffWithComps parent = data.Read<HediffWithComps>();
+                        // Always consume compIndex: the writer sends it after the parent, so a null parent must not leave it unread
+                        var compIndex = data.Read<ushort>();
                         if (parent == null) {
                             return;
                         }
                         Type compType = hediffCompTypes[index];
-                        var compIndex = data.Read<ushort>();
                         if (compIndex <= 0)
                             hediffComp = parent.comps.Find(c => c.props.compClass == compType);
                         else
-                            hediffComp = parent.comps.Where(c => c.props.compClass == compType).ElementAt(compIndex);
+                            hediffComp = parent.comps.Where(c => c.props.compClass == compType).ElementAtOrDefault(compIndex);
                     }
                 }, true // implicit
             },
@@ -883,15 +884,16 @@ namespace Multiplayer.Client
                             return;
                         }
                         ThingWithComps parent = data.Read<ThingWithComps>();
+                        // Always consume compIndex: the writer sends it after the parent, so a null parent must not leave it unread
+                        var compIndex = data.Read<ushort>();
                         if (parent == null) {
                             return;
                         }
                         Type compType = thingCompTypes[index];
-                        var compIndex = data.Read<ushort>();
                         if (compIndex <= 0)
                             comp = parent.AllComps.Find(c => c.props.compClass == compType);
                         else
-                            comp = parent.AllComps.Where(c => c.props.compClass == compType).ElementAt(compIndex);
+                            comp = parent.AllComps.Where(c => c.props.compClass == compType).ElementAtOrDefault(compIndex);
                     }
                 }, true // implicit
             },
