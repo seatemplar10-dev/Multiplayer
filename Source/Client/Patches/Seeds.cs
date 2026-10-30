@@ -73,6 +73,67 @@ namespace Multiplayer.Client
         }
     }
 
+    // FIXES row 241: RoomTempTracker.RegenerateEqualizeCells ends with equalizeCells.Shuffle() (Verse.Rand), and every interval
+    // samples 20% of that list in cycle order, so a different shuffle order is a different room temperature (1/16 C apart on
+    // the two PCs ~300 ticks after a join). Regenerates run in any context (load, join, room or roof change). Seed the shuffle
+    // from the room's shape only (map id, smallest cell index, cell count; never room.ID), and sort the cells first because the
+    // pre-shuffle order follows Room.Cells (district and region order), which is history, not shape. The outer Rand stream is
+    // left alone. cycleIndex is not saved and vanilla never resets it, so a fresh regenerate starts both PCs at 0.
+    // Lab probe: -mplabequalize logs one line per regenerate (default off).
+    [HarmonyPatch(typeof(RoomTempTracker), "RegenerateEqualizeCells")]
+    static class SeedRoomTempEqualizeCells
+    {
+        public const string ProbeArg = "mplabequalize";
+        static readonly bool Probe = GenCommandLine.CommandLineArgPassed(ProbeArg);
+
+        static void Prefix(Room ___room, Map map, ref bool __state)
+        {
+            if (Multiplayer.Client == null) return;
+
+            int minCell = int.MaxValue;
+            foreach (var cell in ___room.Cells)
+                minCell = Math.Min(minCell, map.cellIndices.CellToIndex(cell));
+
+            Rand.PushState(Gen.HashCombineInt(Gen.HashCombineInt(map.uniqueID, minCell), ___room.CellCount));
+            __state = true;
+        }
+
+        // Finalizer, not Postfix: the PopState must run even if the original threw
+        static void Finalizer(Room ___room, Map map, List<IntVec3> ___equalizeCells, ref int ___cycleIndex, bool __state)
+        {
+            if (!__state) return;
+
+            try
+            {
+                // The vanilla shuffle already ran inside the pushed state and drew the same number of values on every PC;
+                // sort to a canonical order and shuffle again, so the result no longer depends on the incoming order
+                ___equalizeCells.Sort((a, b) => map.cellIndices.CellToIndex(a).CompareTo(map.cellIndices.CellToIndex(b)));
+                ___equalizeCells.Shuffle();
+                ___cycleIndex = 0;
+
+                if (Probe)
+                    LogProbe(___room, map, ___equalizeCells);
+            }
+            finally
+            {
+                Rand.PopState();
+            }
+        }
+
+        static void LogProbe(Room room, Map map, List<IntVec3> cells)
+        {
+            int minCell = int.MaxValue;
+            foreach (var cell in room.Cells)
+                minCell = Math.Min(minCell, map.cellIndices.CellToIndex(cell));
+
+            int hash = cells.Count;
+            foreach (var cell in cells)
+                hash = Gen.HashCombineInt(hash, map.cellIndices.CellToIndex(cell));
+
+            Log.Message($"Multiplayer {ProbeArg}: mpTick={TickPatch.Timer} mapTick={map.AsyncTime().mapTicks} map={map.uniqueID} roomMinCell={minCell} roomCells={room.CellCount} equalizeCells={cells.Count} orderHash={hash} ticking={Multiplayer.Ticking} inInterface={Multiplayer.InInterface}");
+        }
+    }
+
     [HarmonyPatch(typeof(CaravanEnterMapUtility), nameof(CaravanEnterMapUtility.Enter), typeof(Caravan), typeof(Map), typeof(Func<Pawn, IntVec3>), typeof(CaravanDropInventoryMode), typeof(bool))]
     static class SeedCaravanEnter
     {
