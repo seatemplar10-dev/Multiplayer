@@ -221,6 +221,15 @@ namespace Multiplayer.Client.Networking
 
                 server.Enqueue(() =>
                 {
+                    // Since the #998 port the client closes its P2P session on every leave. If its restarted client already
+                    // joined again on a live session (row 266 replaces the old player), this fail belongs to the closed old
+                    // session: the lookup below goes by Steam id only and would drop the new player.
+                    if (SteamNetworking.GetP2PSessionState(remoteId, out var state) && state.m_bConnectionActive == 1)
+                    {
+                        ServerLog.Log($"Ignored Steam P2P session fail for {remoteId}: the session is active again");
+                        return;
+                    }
+
                     var conn = server.playerManager.Players.Select(p => p.conn).OfType<SteamBaseConn>()
                         .FirstOrDefault(c => c.remoteId == remoteId);
                     conn?.OnError(error);
