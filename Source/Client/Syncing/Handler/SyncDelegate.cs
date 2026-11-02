@@ -190,7 +190,14 @@ namespace Multiplayer.Client
                 if (fieldTransformers[i] is SyncTransformer tr)
                     ValidateType($"Field {fieldPaths[i]} type", tr.networkType);
                 else if (!fieldTypes[i].IsCompilerGenerated())
-                    ValidateType($"Field {fieldPaths[i]} type", fieldTypes[i]);
+                {
+                    // Same SyncType as the write path, so an exposed field is checked as exposed
+                    var type = (SyncType)fieldTypes[i];
+                    if (exposeFields != null && exposeFields.Contains(fieldPathsNoTypes[i]))
+                        type.expose = true;
+
+                    ValidateType($"Field {fieldPaths[i]} type", type);
+                }
 
             for (int i = 0; i < argTypes.Length; i++)
                 ValidateType($"Arg {i} type", argTransformers[i]?.networkType ?? argTypes[i]);
