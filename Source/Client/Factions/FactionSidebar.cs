@@ -393,6 +393,8 @@ namespace Multiplayer.Client
                 factionCreationDto.generateMap = generateMap;
                 factionCreationDto.startingPossessions = GetStartingPossessions(startingPawns);
                 factionCreationDto.setupNextMapFromTickZero = setupNextMapFromTickZero;
+                // FIXES row 385: the custom xenotypes picked on the pawn page exist on this PC only (see PrepForMapGenWithCarriedXenotypes)
+                factionCreationDto.customXenotypes = FactionCreator.CollectCustomXenotypes(Find.GameInitData.startingPawnCount);
 
                 FactionCreator.CreateFaction(playerId, factionCreationDto);
             }

@@ -76,7 +76,7 @@ public static class FactionCreator
                         foreach (var pawn in StartingPawnUtility.StartingAndOptionalPawns)
                             pawn.ideo.SetIdeo(newFaction.ideos.PrimaryIdeo);
 
-                        newMap = GenerateNewMap(creationData.startingTile, scenario, creationData.setupNextMapFromTickZero);
+                        newMap = GenerateNewMap(creationData.startingTile, scenario, creationData.setupNextMapFromTickZero, creationData.customXenotypes);
 
                         // 1.7 lab (FIXES row 190, runs MF6 / MF7): mods queue map spawns with LongEventHandler.ExecuteWhenFinished during
                         // generation (VEF's GenerateMap postfix -> DoMapSpawns). Vanilla runs them after this event has ended, when
@@ -157,11 +157,70 @@ public static class FactionCreator
         CameraJumper.TryJump(MapGenerator.playerStartSpotInt, generatedMap);
     }
 
-    private static Map GenerateNewMap(PlanetTile tile, Scenario scenario, bool setupNextMapFromTickZero)
+    // FIXES row 385: GameInitData.PrepForMapGen ends with a loop over StartingPawnUtility.GetGenerationRequest(i).ForcedCustomXenotype
+    // (Verse/GameInitData.cs:134) that adds each custom xenotype picked on the pawn page to Current.Game.customXenotypeDatabase. The
+    // requests exist on the issuing PC only (the page's static list), so the database, which is saved and read by the simulation
+    // (PawnGenerator.AdjustXenotypeForFactionlessPawn: customXenotypes.Count in a Rand.Range, TryRandomElement; Pawn_GeneTracker:93),
+    // got the entry on the issuer and not on the other PCs or the arbiter. The issuer now ships the xenotypes in the command; every PC
+    // drops what PrepForMapGen added from its local requests and adds the carried ones (same order, no Rand).
+    private static void PrepForMapGenWithCarriedXenotypes(List<CarriedCustomXenotype> carried)
+    {
+        var database = Current.Game.customXenotypeDatabase?.customXenotypes;
+        var before = database?.ToList();
+
+        Find.GameInitData.PrepForMapGen();
+
+        if (database == null)
+            return;
+
+        database.Clear();
+        database.AddRange(before);
+
+        if (carried == null)
+            return;
+
+        foreach (var data in carried)
+        {
+            if (database.Any(x => x.name == data.Name && x.inheritable == data.Inheritable && x.iconDef == data.IconDef && x.genes.SequenceEqual(data.Genes)))
+                continue;
+
+            database.Add(new CustomXenotype
+            {
+                name = data.Name,
+                inheritable = data.Inheritable,
+                iconDef = data.IconDef,
+                genes = data.Genes.ToList()
+            });
+            MpLog.Log($"Multiplayer: carried custom xenotype '{data.Name}' in CreateFaction (row 385)");
+        }
+    }
+
+    // FIXES row 385: the distinct custom xenotypes of the first pawnCount starting pawn requests (what PrepForMapGen reads), on the issuer
+    public static List<CarriedCustomXenotype> CollectCustomXenotypes(int pawnCount)
+    {
+        var result = new List<CarriedCustomXenotype>();
+        if (!ModsConfig.BiotechActive)
+            return result;
+
+        var seen = new List<CustomXenotype>();
+        for (int i = 0; i < pawnCount; i++)
+        {
+            var xenotype = StartingPawnUtility.GetGenerationRequest(i).ForcedCustomXenotype;
+            if (xenotype == null || seen.Contains(xenotype))
+                continue;
+
+            seen.Add(xenotype);
+            result.Add(new CarriedCustomXenotype(xenotype.name, xenotype.inheritable, xenotype.iconDef, xenotype.genes.ToList()));
+        }
+
+        return result;
+    }
+
+    private static Map GenerateNewMap(PlanetTile tile, Scenario scenario, bool setupNextMapFromTickZero, List<CarriedCustomXenotype> carriedXenotypes)
     {
         // This has to be null, otherwise, during map generation, Faction.OfPlayer returns it which breaks FactionContext
         Find.GameInitData.playerFaction = null;
-        Find.GameInitData.PrepForMapGen();
+        PrepForMapGenWithCarriedXenotypes(carriedXenotypes);
 
         // ScenPart_PlayerFaction --> PreMapGenerate
 
@@ -383,4 +442,8 @@ public record FactionCreationData : ISyncSimple
     public bool generateMap;
     public List<ThingDefCount> startingPossessions;
     public bool setupNextMapFromTickZero;
+    public List<CarriedCustomXenotype> customXenotypes; // FIXES row 385
 }
+
+// FIXES row 385: a CustomXenotype by value (fileName is a local file name and is not carried)
+public record CarriedCustomXenotype(string Name, bool Inheritable, XenotypeIconDef IconDef, List<GeneDef> Genes) : ISyncSimple;
