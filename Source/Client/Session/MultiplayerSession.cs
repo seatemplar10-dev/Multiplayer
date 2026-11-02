@@ -67,7 +67,7 @@ namespace Multiplayer.Client
         {
             if (client != null)
             {
-                client.Close(MpDisconnectReason.Internal);
+                client.Close();
                 client.ChangeState(ConnectionStateEnum.Disconnected);
             }
 

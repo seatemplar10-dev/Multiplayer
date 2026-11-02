@@ -45,9 +45,6 @@ namespace Multiplayer.Client.Networking
         protected override void OnClose(ServerDisconnectPacket? goodbye)
         {
             if (goodbye.HasValue) Send(goodbye.Value);
-            // TODO this should probably include SteamNetworking.CloseP2PSessionWithUser to free up any leftover
-            //   resources in the Steam API. The API docs are not clear whether the connection is closed instantly, or
-            //   are the queued packets sent.
         }
 
         public override string ToString() => $"SteamP2P ({remoteId}:{username})";
@@ -79,6 +76,19 @@ namespace Multiplayer.Client.Networking
                 : "MpSteamGenericError".Translate();
             ConnectionStatusListeners.TryNotifyAll_Disconnected(new SessionDisconnectInfo { titleTranslated = title });
             Multiplayer.StopMultiplayer();
+        }
+
+        protected override void OnClose(ServerDisconnectPacket? goodbye)
+        {
+            base.OnClose(goodbye);
+            // TODO It's not documented in the API, but from manual tests it appears that CloseP2PSession does not flush
+            //   any queued messages, so the Send above effectively does nothing. It's left as it is though, as that's
+            //   the correct behavior and should eventually be fixed (possibly by switching to Steam Networking Sockets,
+            //   which have a Close method with enableLinger parameter). The server does not close the steam connection
+            //   as then, the client would not know the disconnection reason. The client does close the session, to
+            //   let the server know the user disconnected, so it can clean it's internal state and allow the player
+            //   to re-join.
+            SteamNetworking.CloseP2PSessionWithUser(remoteId);
         }
     }
 
@@ -151,7 +161,7 @@ namespace Multiplayer.Client.Networking
                     if (preConnect != null)
                     {
                         ServerLog.Log($"Rejected incoming connection from {packet.remote}: {preConnect}");
-                        conn.Close(preConnect.Value);
+                        conn.Disconnect(preConnect.Value);
                         continue;
                     }
 
@@ -211,6 +221,15 @@ namespace Multiplayer.Client.Networking
 
                 server.Enqueue(() =>
                 {
+                    // Since the #998 port the client closes its P2P session on every leave. If its restarted client already
+                    // joined again on a live session (row 266 replaces the old player), this fail belongs to the closed old
+                    // session: the lookup below goes by Steam id only and would drop the new player.
+                    if (SteamNetworking.GetP2PSessionState(remoteId, out var state) && state.m_bConnectionActive == 1)
+                    {
+                        ServerLog.Log($"Ignored Steam P2P session fail for {remoteId}: the session is active again");
+                        return;
+                    }
+
                     var conn = server.playerManager.Players.Select(p => p.conn).OfType<SteamBaseConn>()
                         .FirstOrDefault(c => c.remoteId == remoteId);
                     conn?.OnError(error);
