@@ -76,6 +76,7 @@ namespace Multiplayer.Client.Patches
         internal static Func<IEnumerable<MethodBase>> allPatchedMethods = Harmony.GetAllPatchedMethods;
         internal static Func<MethodBase, HarmonyLib.Patches> patchInfoOf = Harmony.GetPatchInfo;
         public static long PatchInfoReads;
+        public static long MethodsResolved;   // PatchMethod lookups by discovery (resolved by token, then cached by Harmony; row 359)
         internal static bool dropNotesForTest;   // test switch: lose every note (the negative control of the incremental tests)
 
         public static int GateSkips;          // postfix calls skipped so far (all threads; diagnostics only)
@@ -416,7 +417,15 @@ namespace Multiplayer.Client.Patches
             public int changed;        // originals noted since the last pass (all an incremental pass reads)
             public int read;           // patch infos this pass read
             public int indexedPostfixes, indexedTargets;   // foreign postfix methods and their originals in the index
+            public long resolved;                          // PatchMethod lookups this pass (row 359; a foreign postfix counts twice)
+            public long readMs, indexMs, applyMs;          // reading patch infos / indexing them (resolves) / deciding + applying
+            public int entriesBuilt;                       // originals that reached C13Plan.Decide in this pass
+            public string decisionHash;                    // hash of the decisions, index and ties (DecisionDigest; full passes only)
+            public string check;                           // -mplabc13check: the unfiltered reference pass agrees (full passes only)
         }
+
+        // Lab switch (row 359): a full pass also indexes every original without the pre-filter and compares the two digests
+        public static bool CheckPrefilter;
 
         // What discovery knows about the patched methods, kept between passes (main thread only). A full pass builds a new one and
         // swaps it in once every method was read; an incremental pass updates the current one for the noted originals only.
@@ -426,6 +435,8 @@ namespace Multiplayer.Client.Patches
             public readonly Dictionary<MethodBase, HashSet<MethodInfo>> postfixesOf = new();        // original -> its foreign postfixes
             public readonly Dictionary<MethodBase, C13Plan.Decision> decisions = new();             // originals C13Plan decided on
             public readonly HashSet<MethodBase> ties = new();                                       // a foreign patch ties with ours
+            public bool prefilter = true;   // row 359: false = build a C13Plan entry for every original (the -mplabc13check reference)
+            public int entriesBuilt;        // originals that reached C13Plan.Decide
 
             public IEnumerable<MethodBase> TargetsOf(MethodInfo p) =>
                 targetsOfPostfix.TryGetValue(p, out var s) ? s : Enumerable.Empty<MethodBase>();
@@ -436,7 +447,7 @@ namespace Multiplayer.Client.Patches
                 var now = new HashSet<MethodInfo>();
                 if (info != null)
                     foreach (var p in info.Postfixes)
-                        if (!C13Plan.IsMpFamily(p.owner) && p.PatchMethod != null) now.Add(p.PatchMethod);
+                        if (!C13Plan.IsMpFamily(p.owner)) { MethodsResolved++; if (p.PatchMethod != null) now.Add(p.PatchMethod); }
                 if (postfixesOf.TryGetValue(original, out var before))
                     foreach (var p in before)
                         if (!now.Contains(p) && targetsOfPostfix.TryGetValue(p, out var ts) && ts.Remove(original) && ts.Count == 0)
@@ -456,6 +467,15 @@ namespace Multiplayer.Client.Patches
                     info.Finalizers.Any(p => p.owner != C13Plan.GuardOwner && p.priority == int.MinValue))
                     ties.Add(original);
 
+                // FIXES row 359: C13Plan keeps a decision only for an original with a Multiplayer bool prefix or sync transpiler
+                // (both owned by MpOwner) AND a foreign postfix (`now`); a decision without either is null or empty and dropped below.
+                // The owners say that without resolving a patch method by token (the slow part of a full pass: ~12,000 resolutions
+                // for ~7,800 originals), so only these few originals resolve their prefixes, transpilers and finalizers.
+                if (prefilter && (now.Count == 0 ||
+                    !info.Prefixes.Any(p => p.owner == C13Plan.MpOwner) && !info.Transpilers.Any(p => p.owner == C13Plan.MpOwner)))
+                    return;
+
+                entriesBuilt++;
                 var t = new C13Plan.TargetEntry
                 {
                     original = original,
@@ -495,7 +515,18 @@ namespace Multiplayer.Client.Patches
             foreach (var o in pending.Keys)
                 if (pending.TryRemove(o, out _)) batch.Add(o);
             res.changed = batch.Count;
-            long reads = PatchInfoReads;
+            long reads = PatchInfoReads, resolved = MethodsResolved;
+            long readTicks = 0, indexTicks = 0;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            void ReadAndUpdate(Index into, MethodBase original)
+            {
+                long t0 = sw.ElapsedTicks;
+                var info = ReadPatchInfo(original);
+                long t1 = sw.ElapsedTicks;
+                into.Update(original, info, isSyncTemplate, syncIdOf);
+                readTicks += t1 - t0;
+                indexTicks += sw.ElapsedTicks - t1;
+            }
             inPass = true;
             try
             {
@@ -503,17 +534,48 @@ namespace Multiplayer.Client.Patches
                 {
                     fullNeeded = true;
                     var fresh = new Index();
-                    foreach (var original in allPatchedMethods().ToList())
-                        fresh.Update(original, ReadPatchInfo(original), isSyncTemplate, syncIdOf);
+                    var all = allPatchedMethods().ToList();
+                    foreach (var original in all)
+                        ReadAndUpdate(fresh, original);
+                    if (CheckPrefilter)
+                    {
+                        // kept out of the pass's counters and ms split (the glue's total includes it: checkMs); a patch made between
+                        // the two reads can show a false MISMATCH
+                        long r0 = PatchInfoReads, m0 = MethodsResolved, c0 = sw.ElapsedTicks;
+                        var reference = new Index { prefilter = false };
+                        foreach (var original in all) reference.Update(original, ReadPatchInfo(original), isSyncTemplate, syncIdOf);
+                        string a = DecisionDigest(fresh), b = DecisionDigest(reference);
+                        long checkMs = (sw.ElapsedTicks - c0) * 1000 / System.Diagnostics.Stopwatch.Frequency;
+                        res.check = a == b
+                            ? $"prefilter check MATCH ({reference.decisions.Count} decisions, {reference.entriesBuilt} entries unfiltered, {checkMs} ms)"
+                            : $"prefilter check MISMATCH (filtered {fresh.decisions.Count} decisions hash {Fnv(a)}, unfiltered {reference.decisions.Count} hash {Fnv(b)}, {checkMs} ms)";
+                        reads += PatchInfoReads - r0;
+                        resolved += MethodsResolved - m0;
+                    }
                     index = fresh;
                 }
                 else
+                {
+                    index.entriesBuilt = 0;   // per pass, like the other counters
                     foreach (var original in batch)
-                        index.Update(original, ReadPatchInfo(original), isSyncTemplate, syncIdOf);
+                        ReadAndUpdate(index, original);
+                }
                 var idx = index;
+                long a0 = sw.ElapsedTicks;
                 res.decisions = idx.decisions.OrderBy(kv => Key(kv.Key), StringComparer.Ordinal).Select(kv => kv.Value).ToList();
                 res.apply = ApplyDecisions(res.decisions, idx, notedUpTo);
-                if (res.full) fullNeeded = false;
+                res.applyMs = (sw.ElapsedTicks - a0) * 1000 / System.Diagnostics.Stopwatch.Frequency;
+                res.readMs = readTicks * 1000 / System.Diagnostics.Stopwatch.Frequency;
+                res.indexMs = indexTicks * 1000 / System.Diagnostics.Stopwatch.Frequency;
+                res.resolved = MethodsResolved - resolved;
+                res.entriesBuilt = idx.entriesBuilt;
+                if (res.full)
+                {
+                    fullNeeded = false;
+                    // full passes only (an incremental pass must not pay for the whole index), after the pass has succeeded
+                    try { res.decisionHash = Fnv(DecisionDigest(idx)); }
+                    catch (Exception e) { res.decisionHash = "failed: " + e.GetType().Name; }
+                }
                 res.read = (int)(PatchInfoReads - reads);
                 res.indexedPostfixes = idx.targetsOfPostfix.Count;
                 res.indexedTargets = idx.postfixesOf.Count;
@@ -549,6 +611,7 @@ namespace Multiplayer.Client.Patches
         {
             foreach (var p in patches)
             {
+                MethodsResolved++;
                 var m = p.PatchMethod;
                 if (m == null) continue;
                 t.patches.Add(new C13Plan.PatchEntry
@@ -585,6 +648,39 @@ namespace Multiplayer.Client.Patches
             sb.Append(string.Join("; ", decisions.Where(d => d.notGated.Count > 0).Select(d =>
                 d.target.name + " <- " + string.Join(", ", d.notGated.Select(n => n.patch.owner + ":" + n.patch.name + " (" + n.reason + ")")))));
             return sb.ToString();
+        }
+
+        // Row 359: what discovery decided, as sorted text (decisions, index, ties). Equal digests = the same input to Apply, so the
+        // pre-filter is checked by comparing a filtered and an unfiltered index of the same patch infos.
+        static string DecisionDigest(Index idx)
+        {
+            var sb = new System.Text.StringBuilder();
+            string Set(IEnumerable<MethodBase> s) => string.Join(" ", s.Select(Key).OrderBy(x => x, StringComparer.Ordinal));
+            string Sorted(IEnumerable<string> s) => string.Join(",", s.OrderBy(x => x, StringComparer.Ordinal));
+            string PKey(C13Plan.PatchEntry p) => p.method is MethodBase m ? Key(m) : p.name;
+            foreach (var kv in idx.decisions.OrderBy(kv => Key(kv.Key), StringComparer.Ordinal))
+            {
+                var d = kv.Value;
+                sb.Append("decision ").Append(Key(kv.Key)).Append(d.prefixChannel ? " skip" : "").Append(d.syncChannel ? " sync" : "")
+                    .Append(" id=").Append(d.syncId).Append(" reason=").Append(d.targetReason)
+                    .Append(" mp=[").Append(Sorted(d.mpBoolPrefixes.Select(p => p.owner + ":" + PKey(p)))).Append("] gated=[")
+                    .Append(Sorted(d.gated.Select(p => p.owner + ":" + PKey(p)))).Append("] not=[")
+                    .Append(Sorted(d.notGated.Select(n => n.patch.owner + ":" + PKey(n.patch) + " (" + n.reason + ")"))).Append("]\n");
+            }
+            foreach (var kv in idx.targetsOfPostfix.OrderBy(kv => Key(kv.Key), StringComparer.Ordinal))
+                sb.Append("index ").Append(Key(kv.Key)).Append(" -> ").Append(Set(kv.Value)).Append('\n');
+            foreach (var kv in idx.postfixesOf.OrderBy(kv => Key(kv.Key), StringComparer.Ordinal))
+                sb.Append("reverse ").Append(Key(kv.Key)).Append(" <- ").Append(Set(kv.Value)).Append('\n');
+            sb.Append("ties ").Append(Set(idx.ties)).Append('\n');
+            return sb.ToString();
+        }
+
+        // FNV-1a 64 over the UTF-16 code units, as 16 hex digits (stable across runs and PCs, unlike string.GetHashCode)
+        internal static string Fnv(string s)
+        {
+            ulong h = 14695981039346656037UL;
+            foreach (char c in s) { h ^= c; h *= 1099511628211UL; }
+            return h.ToString("x16");
         }
 
         public static bool IsOurPatchMethod(MethodBase m) =>

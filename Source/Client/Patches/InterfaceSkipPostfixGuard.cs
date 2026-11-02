@@ -28,6 +28,7 @@ namespace Multiplayer.Client.Patches
         // some mod patches at runtime, every pass rescans all ~7,400 patched methods, and the main thread spent its frames in
         // Discover (the simulation crawled to ~40 ticks a minute). ArbiterLauncher passes the switch on to the arbiter.
         public const string OffArg = "mplabnoc13";
+        public const string CheckArg = "mplabc13check";
         public static readonly bool Off = GenCommandLine.CommandLineArgPassed(OffArg);
 
         // Who changes patches after the session start (the rescan trigger): the first 20, logged from the main thread
@@ -49,6 +50,8 @@ namespace Multiplayer.Client.Patches
                 return;
             }
             started = true;
+            // Lab switch (row 359): the full pass also builds the unfiltered reference index and logs MATCH / MISMATCH
+            C13Core.CheckPrefilter = GenCommandLine.CommandLineArgPassed(CheckArg);
             Discover("session start", full: true);
         }
 
@@ -145,7 +148,11 @@ namespace Multiplayer.Client.Patches
                     lastSummary = key;
                     if (!res.full) changedPassesLogged++;
                     Log.Message(res.summary + $" [{watch.ElapsedMilliseconds} ms, {(res.full ? "full" : "incremental")} pass: {res.changed} noted changes, " +
-                        $"{res.read} patch infos read, index {res.indexedPostfixes} foreign postfixes on {res.indexedTargets} methods]");
+                        $"{res.read} patch infos read, index {res.indexedPostfixes} foreign postfixes on {res.indexedTargets} methods; " +
+                        $"read {res.readMs} ms, index {res.indexMs} ms ({res.resolved} patch method lookups), apply {res.applyMs} ms; " +
+                        $"{res.decisions.Count} decisions from {res.entriesBuilt} candidate entries" +
+                        (res.decisionHash != null ? ", decision hash " + res.decisionHash : "") +
+                        (res.check != null ? "; " + res.check : "") + "]");
                 }
             }
             catch (Exception e)
