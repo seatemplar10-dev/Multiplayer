@@ -22,6 +22,8 @@ namespace Multiplayer.Client
 
         public static void PostInitHandlers()
         {
+            ValidateAll();
+
             handlers.SortStable((a, b) => a.version.CompareTo(b.version));
 
             for (int i = 0; i < handlers.Count; i++)
@@ -388,10 +390,15 @@ namespace Multiplayer.Client
             PauseLockSession.pauseLocks.Add(pauseLock);
         }
 
+        // Handlers already validated. ValidateAll first runs in Multiplayer's constructor, before other mods
+        // (MP Compat and the rest) register theirs, so PostInitHandlers runs it again for the late ones.
+        static readonly HashSet<SyncHandler> validated = new();
+
         public static void ValidateAll()
         {
             foreach (var handler in handlers)
             {
+                if (!validated.Add(handler)) continue;
                 try
                 {
                     handler.Validate();
