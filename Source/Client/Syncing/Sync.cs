@@ -22,7 +22,7 @@ namespace Multiplayer.Client
 
         public static void PostInitHandlers()
         {
-            ValidateAll();
+            ValidateAll(lateHandlers: true);
 
             handlers.SortStable((a, b) => a.version.CompareTo(b.version));
 
@@ -394,7 +394,9 @@ namespace Multiplayer.Client
         // (MP Compat and the rest) register theirs, so PostInitHandlers runs it again for the late ones.
         static readonly HashSet<SyncHandler> validated = new();
 
-        public static void ValidateAll()
+        // Other mods' handlers (lateHandlers) only log a warning: many mods mark tick-only methods with [SyncMethod]
+        // (rjw, SnapOut), which never sync and work as before, so they must not raise the main-menu loading error.
+        public static void ValidateAll(bool lateHandlers = false)
         {
             foreach (var handler in handlers)
             {
@@ -404,6 +406,12 @@ namespace Multiplayer.Client
                     handler.Validate();
                 } catch (Exception e)
                 {
+                    if (lateHandlers)
+                    {
+                        Log.Warning($"{handler} validation failed (registered by another mod; it still runs unsynced in ticks and commands, and throws if called from the UI): {e.Message}");
+                        continue;
+                    }
+
                     Log.Error($"{handler} validation failed: {e}");
                     Multiplayer.loadingErrors = true;
                 }
