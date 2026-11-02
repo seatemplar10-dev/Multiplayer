@@ -229,6 +229,10 @@ namespace Multiplayer.Client
         public static TimeSnapshot? GetAndSetFromMap(Map map)
         {
             if (map == null) return null;
+            // FIXES row 187: the TickManager fields are process-wide. A worker thread (Map Preview's map generation) that reached
+            // one of the patches above would set them to some map's time while the main thread ticks another context, and its
+            // restore would put back a stale value. On such a thread nothing is set (a joiner's load thread still sets it).
+            if (ForeignThread.Now) return null;
 
             TimeSnapshot prev = Current();
 
