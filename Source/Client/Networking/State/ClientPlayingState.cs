@@ -226,7 +226,14 @@ namespace Multiplayer.Client
         {
             var playerId = packet.playerId;
             var factionId = packet.factionId;
-            Session.GetPlayerInfo(playerId).factionId = factionId;
+            // Row 407: the player may not be in the list yet (a join or list packet still to come). The server sets
+            // ServerPlayer.FactionId before it broadcasts this packet, and every later PlayerList Add/List carries the
+            // current factionId (PlayerInfo.FromNet), so the faction is not lost; do not throw and leave the game.
+            var playerInfo = Session.GetPlayerInfo(playerId);
+            if (playerInfo != null)
+                playerInfo.factionId = factionId;
+            else
+                ServerLog.Log($"SetFaction: player {playerId} not in the player list yet, faction {factionId} comes with its list entry");
 
             if (Session.playerId == playerId)
             {
