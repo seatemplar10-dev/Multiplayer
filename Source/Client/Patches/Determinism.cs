@@ -48,7 +48,16 @@ namespace Multiplayer.Client.Patches
     [HarmonyPatch(typeof(Pawn_MeleeVerbs), nameof(Pawn_MeleeVerbs.TryGetMeleeVerb))]
     static class TryGetMeleeVerbPatch
     {
-        static bool Cancel => Multiplayer.Client != null && Multiplayer.InInterface;
+        // FIXES row 129: the re-pick draws Rand and writes curMeleeVerb/curMeleeVerbUpdateTick, which are saved. Skip it
+        // whenever the call is not part of the simulation. InInterface alone let it run with a long event current or during
+        // a reload. Long events queued by a tick or a command (join point reload, map generation) run the simulation on
+        // every PC, so they are not cancelled; neither are calls off the main thread (asynchronous long events), never UI.
+        internal static bool Cancel =>
+            Multiplayer.Client != null
+            && !Multiplayer.Ticking
+            && !Multiplayer.ExecutingCmds
+            && !NewLongEvent.currentEventWasMarked
+            && UnityData.IsInMainThread;
 
         static bool Prefix()
         {
@@ -61,6 +70,14 @@ namespace Multiplayer.Client.Patches
             if (Cancel)
                 __result = __instance.GetUpdatedAvailableVerbsList(false).FirstOrDefault(ve => ve.GetSelectionWeight(target) != 0).verb;
         }
+    }
+
+    // FIXES row 129: Melee Animation (AM.Outcome.OutcomeUtility.Damage) calls the private ChooseMeleeVerb directly, past
+    // the TryGetMeleeVerb guard. Outside the simulation keep the current verb: no Rand draw and no write.
+    [HarmonyPatch(typeof(Pawn_MeleeVerbs), nameof(Pawn_MeleeVerbs.ChooseMeleeVerb))]
+    static class ChooseMeleeVerbPatch
+    {
+        static bool Prefix() => !TryGetMeleeVerbPatch.Cancel;
     }
 
     [HarmonyPatch(typeof(PawnBioAndNameGenerator), nameof(PawnBioAndNameGenerator.TryGetRandomUnusedSolidName))]
