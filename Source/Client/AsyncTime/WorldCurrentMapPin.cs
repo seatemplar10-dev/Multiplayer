@@ -332,6 +332,15 @@ public static class WorldCurrentMapPin
             game.currentMapIndex = IndexIn(game, pinnedMap);
     }
 
+    // FIXES row 109 fixup (review 15 Nov): a camera jump or selection inside a map command (AsyncTimeComp.executingCmdMap)
+    // runs only on a PC that views the target map, and there with its view (ShowView), so it never calls the Game.CurrentMap
+    // setter. On a PC that looks elsewhere the setter would reset the map UI (stops a targeter) and VTRSync would send a
+    // PlayerCount command; RestoreViewAfterCmd's direct write back to the old view would then leave the target map counted +1
+    // for good (VTRSync.lastMovedToMapId). Before the pin the command map was current on every PC, so a jump to it called no
+    // setter, and RestoreViewAfterCmd undoes any other switch, so the skip changes no view a command leaves behind.
+    internal static bool SkipViewSwitchInMapCmd(Map target) =>
+        depth > 0 && game != null && game == Current.Game && AsyncTimeComp.executingCmdMap != null && target != viewedMap;
+
     private static Map MapAt(Game g, int index) => index >= 0 && index < g.Maps.Count ? g.Maps[index] : null;
 
     private static sbyte IndexIn(Game g, Map map)
@@ -381,7 +390,8 @@ static class WorldCurrentMapPinRemoveMapPatch
 // Presentation that compares with Find.CurrentMap runs, inside a pinned scope, with this client's view, as without the pin:
 // the sounds' map checks (PlayOneShotOnCamera(map) gates on the map; PlayOneShot reaches SoundDefHelper.CorrectContextNow;
 // SubSoundDef.TryPlay reads the map's sound parameters; Multiplayer isolates their Rand: SubSoundDef.TryPlay, Sample) and
-// camera jumps / selection by simulation code (a quest's camera jump moves each viewer's own camera, review 19 Oct).
+// camera jumps / selection by simulation code (a quest's camera jump moves each viewer's own camera, review 19 Oct; the
+// camera patches below).
 [HarmonyPatch]
 static class WorldCurrentMapPinViewPatch
 {
@@ -390,13 +400,47 @@ static class WorldCurrentMapPinViewPatch
         yield return AccessTools.Method(typeof(SoundDefHelper), nameof(SoundDefHelper.CorrectContextNow));
         yield return AccessTools.Method(typeof(SoundStarter), nameof(SoundStarter.PlayOneShotOnCamera));
         yield return AccessTools.Method(typeof(SubSoundDef), nameof(SubSoundDef.TryPlay));
-        yield return AccessTools.Method(typeof(CameraJumper), "TryJumpInternal", new[] { typeof(IntVec3), typeof(Map), typeof(CameraJumper.MovementMode) });
-        yield return AccessTools.Method(typeof(CameraJumper), "TrySelectInternal", new[] { typeof(Thing) });
     }
 
     static void Prefix(ref bool __state)
     {
         __state = WorldCurrentMapPin.ShowView();
+    }
+
+    static void Finalizer(bool __state)
+    {
+        if (__state)
+            WorldCurrentMapPin.HideView();
+    }
+}
+
+// Camera jumps and selection by simulation code run with this client's view, as WorldCurrentMapPinViewPatch. Inside a map
+// command they are skipped on a PC that does not view the target map (SkipViewSwitchInMapCmd, FIXES row 109 fixup).
+[HarmonyPatch(typeof(CameraJumper), "TryJumpInternal", new[] { typeof(IntVec3), typeof(Map), typeof(CameraJumper.MovementMode) })]
+static class WorldCurrentMapPinCameraJumpPatch
+{
+    static bool Prefix(Map map, ref bool __state)
+    {
+        if (WorldCurrentMapPin.SkipViewSwitchInMapCmd(map)) return false;
+        __state = WorldCurrentMapPin.ShowView();
+        return true;
+    }
+
+    static void Finalizer(bool __state)
+    {
+        if (__state)
+            WorldCurrentMapPin.HideView();
+    }
+}
+
+[HarmonyPatch(typeof(CameraJumper), "TrySelectInternal", new[] { typeof(Thing) })]
+static class WorldCurrentMapPinCameraSelectPatch
+{
+    static bool Prefix(Thing thing, ref bool __state)
+    {
+        if (WorldCurrentMapPin.SkipViewSwitchInMapCmd(thing?.Map)) return false;
+        __state = WorldCurrentMapPin.ShowView();
+        return true;
     }
 
     static void Finalizer(bool __state)

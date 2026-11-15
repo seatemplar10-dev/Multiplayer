@@ -356,9 +356,11 @@ namespace Multiplayer.Client
         }
 
         // FIXES row 109, after the outermost Unpin: as before the pin, a view switch inside the command (the Game.CurrentMap
-        // setter, a camera jump) is undone, unless the issuer began targeting on the command map (keepTheMap, CancelBeginTargeting)
-        // and keeps that map. Direct writes, as before: the setter's MapUI.Notify_SwitchedMap would stop that targeter. A view the
-        // command removed is switched by WorldCurrentMapPin.FlushViewSwitch (maps[0] and the world view, as vanilla's removal).
+        // setter) is undone, unless the issuer began targeting on the command map (keepTheMap, CancelBeginTargeting) and keeps
+        // that map. Camera jumps and selection never switch: they skip a PC that does not view their map (row 109 fixup,
+        // WorldCurrentMapPin.SkipViewSwitchInMapCmd). Direct writes, as before: the setter's MapUI.Notify_SwitchedMap would stop
+        // that targeter. A view the command removed is switched by WorldCurrentMapPin.FlushViewSwitch (maps[0] and the world
+        // view, as vanilla's removal).
         private void RestoreViewAfterCmd(Map prevMap)
         {
             var view = keepTheMap ? map : prevMap;
