@@ -55,8 +55,8 @@ public static class WorldCurrentMapPin
     // matching Unpin, then the enclosing pin's map is back.
     public static void PinMap(Map map) => Enter(map);
 
-    // Writes Game.currentMapIndex directly, like AsyncTimeComp.ExecuteCmd: the Game.CurrentMap setter notifies the map UI
-    // and ambient sound, and VTRSync's MapSwitchPatch would send a viewed-map command.
+    // Writes Game.currentMapIndex directly (also for map commands, AsyncTimeComp.ExecuteCmd, FIXES row 109): the Game.CurrentMap
+    // setter notifies the map UI and ambient sound, and VTRSync's MapSwitchPatch would send a viewed-map command.
     private static void Enter(Map map)
     {
         var g = Current.Game;
