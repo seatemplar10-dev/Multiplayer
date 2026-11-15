@@ -25,6 +25,19 @@ public class WorldData
 
     private TaskCompletionSource<WorldData>? dataSource;
 
+    // 1.7 lab (FIXES row 37): while the arbiter is Playing only its world upload ends a join point
+    // (ServerPlayingState.HandleWorldDataUpload), so an arbiter that never sends it (frozen, failed save, or it ran the join
+    // point while still simulating) kept the join point open forever: joins and resyncs hung at "waiting for game data".
+    // The host's upload of that join point is kept and used when the arbiter stops Playing, or has not uploaded
+    // ArbiterUploadGraceSecs after the host. Then the arbiter is set Desynced: the host is the reference again (uploads and
+    // sync opinions) and the arbiter no longer holds the game timer, until it rejoins.
+    public const int ArbiterUploadGraceSecs = 60;
+    public const int ArbiterUploadGraceNetTicks = ArbiterUploadGraceSecs * MultiplayerServer.NetTicksPerSecond;
+    private byte[]? hostUploadForArbiterTimeout;
+    private int hostUploadKeptAt;
+
+    public bool HasHostUploadForArbiterTimeout => hostUploadForArbiterTimeout != null;
+
     public bool CreatingJoinPoint => tmpMapCmds != null;
 
     public MultiplayerServer Server { get; }
@@ -82,6 +95,7 @@ public class WorldData
         ServerLog.Detail($"Join point completed at tick={currentTick}, standalone={Server.IsStandaloneServer}");
         mapCmds = tmpMapCmds!;
         tmpMapCmds = null;
+        hostUploadForArbiterTimeout = null;
         lastJoinPointAtTick = currentTick;
 
         if (Server.IsStandaloneServer && Server.persistence != null)
@@ -106,8 +120,71 @@ public class WorldData
             return;
 
         tmpMapCmds = null;
+        hostUploadForArbiterTimeout = null;
         dataSource?.SetResult(this);
         dataSource = null;
+    }
+
+    // A Client_WorldDataUpload body (SaveLoad.SendGameData): the maps, the game and the session data. Ends the join point.
+    public void ApplyWorldUpload(ByteReader data)
+    {
+        mapData = new Dictionary<int, byte[]>();
+
+        int maps = data.ReadInt32();
+        for (int i = 0; i < maps; i++)
+        {
+            int mapId = data.ReadInt32();
+            mapData[mapId] = data.ReadPrefixedBytes();
+        }
+
+        savedGame = data.ReadPrefixedBytes();
+        sessionData = data.ReadPrefixedBytes();
+
+        if (CreatingJoinPoint)
+            EndJoinPointCreation();
+    }
+
+    // FIXES row 37: the host's upload of the current join point, dropped because the arbiter is the uploader
+    public void KeepHostUploadForArbiterTimeout(byte[] upload, int netTimer)
+    {
+        if (!CreatingJoinPoint)
+            return;
+
+        hostUploadForArbiterTimeout = upload;
+        hostUploadKeptAt = netTimer;
+        ServerLog.Detail($"Join point: kept the host's world upload ({upload.Length} bytes) while the arbiter's is due");
+    }
+
+    // FIXES row 37: runs every server loop (MultiplayerServer.Run)
+    public void TickArbiterUploadFallback(int netTimer)
+    {
+        if (hostUploadForArbiterTimeout == null)
+            return;
+
+        if (!CreatingJoinPoint)
+        {
+            hostUploadForArbiterTimeout = null;
+            return;
+        }
+
+        var arbiter = Server.PlayingPlayers.FirstOrDefault(p => p.IsArbiter && p.status == PlayerStatus.Playing);
+        if (arbiter != null && netTimer - hostUploadKeptAt <= ArbiterUploadGraceNetTicks)
+            return;
+
+        var upload = hostUploadForArbiterTimeout;
+        if (arbiter != null)
+        {
+            ServerLog.Log($"Join point: no world upload from the arbiter {ArbiterUploadGraceSecs} s after the host's; " +
+                          "using the host's upload and setting the arbiter Desynced until it rejoins");
+            Server.SendChat("The arbiter did not send the join point; the host's was used. The arbiter is out until it rejoins.");
+            arbiter.UpdateStatus(PlayerStatus.Desynced);
+        }
+        else
+        {
+            ServerLog.Log("Join point: the arbiter stopped playing before it sent its world upload; using the host's upload");
+        }
+
+        ApplyWorldUpload(new ByteReader(upload));
     }
 
     public Task<WorldData> WaitJoinPoint()

@@ -290,6 +290,12 @@ public class AsyncWorldTimeComp : IExposable, ITickable
         }
     }
 
+    // Lab probe (FIXES row 37): -mplabarbiternoupload makes the arbiter keep its join point upload to itself, like an arbiter
+    // that froze or failed its save; the server must then use the host's upload (WorldData.TickArbiterUploadFallback).
+    // ArbiterLauncher passes it on to the arbiter. Default off.
+    public const string ArbiterNoUploadArg = "mplabarbiternoupload";
+    public static readonly bool ArbiterNoUpload = GenCommandLine.CommandLineArgPassed(ArbiterNoUploadArg);
+
     private static void CreateJoinPointAndSendIfHost()
     {
         Multiplayer.session.dataSnapshot = SaveLoad.SaveReloadAndCreateSnapshot(
@@ -313,6 +319,12 @@ public class AsyncWorldTimeComp : IExposable, ITickable
             else if (Multiplayer.LocalServer != null || Multiplayer.arbiterInstance)
             {
                 // Hosted: only host/arbiter uploads world data
+                if (Multiplayer.arbiterInstance && ArbiterNoUpload)
+                {
+                    Log.Warning($"Multiplayer: lab probe -{ArbiterNoUploadArg}: the arbiter does not send its join point upload");
+                    return;
+                }
+
                 SaveLoad.SendGameData(Multiplayer.session.dataSnapshot, true);
             }
         }

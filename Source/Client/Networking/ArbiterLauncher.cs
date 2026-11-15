@@ -155,6 +155,9 @@ namespace Multiplayer.Client.Networking
                 psi.ArgumentList.Add("-" + global::Multiplayer.Client.Patches.PathJobsComplete.OffArg);
             if (global::Multiplayer.Client.Patches.InterfaceSkipPostfixGuard.Off)
                 psi.ArgumentList.Add("-" + global::Multiplayer.Client.Patches.InterfaceSkipPostfixGuard.OffArg);
+            // Lab probe (FIXES row 37): the arbiter withholds its join point uploads
+            if (global::Multiplayer.Client.AsyncTime.AsyncWorldTimeComp.ArbiterNoUpload)
+                psi.ArgumentList.Add("-" + global::Multiplayer.Client.AsyncTime.AsyncWorldTimeComp.ArbiterNoUploadArg);
 
             psi.RedirectStandardOutput = true;
             psi.RedirectStandardError = true;

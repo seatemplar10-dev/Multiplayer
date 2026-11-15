@@ -90,24 +90,17 @@ namespace Multiplayer.Common
         {
             // On standalone, accept from any playing client; otherwise only host/arbiter
             if (!Server.IsStandaloneServer && (Server.ArbiterPlaying ? !Player.IsArbiter : !Player.IsHost))
+            {
+                // FIXES row 37: the host's upload is kept for the case the arbiter never sends its own
+                // (WorldData.TickArbiterUploadFallback)
+                if (Player.IsHost && Server.worldData.CreatingJoinPoint)
+                    Server.worldData.KeepHostUploadForArbiterTimeout(data.ReadRaw(data.Left), Server.NetTimer);
                 return;
+            }
 
             ServerLog.Detail($"Got world upload {data.Left}");
 
-            Server.worldData.mapData = new Dictionary<int, byte[]>();
-
-            int maps = data.ReadInt32();
-            for (int i = 0; i < maps; i++)
-            {
-                int mapId = data.ReadInt32();
-                Server.worldData.mapData[mapId] = data.ReadPrefixedBytes();
-            }
-
-            Server.worldData.savedGame = data.ReadPrefixedBytes();
-            Server.worldData.sessionData = data.ReadPrefixedBytes();
-
-            if (Server.worldData.CreatingJoinPoint)
-                Server.worldData.EndJoinPointCreation();
+            Server.worldData.ApplyWorldUpload(data);
         }
 
         [TypedPacketHandler]
