@@ -332,14 +332,42 @@ public static class WorldCurrentMapPin
             game.currentMapIndex = IndexIn(game, pinnedMap);
     }
 
-    // FIXES row 109 fixup (review 15 Nov): a camera jump or selection inside a map command (AsyncTimeComp.executingCmdMap)
-    // runs only on a PC that views the target map, and there with its view (ShowView), so it never calls the Game.CurrentMap
-    // setter. On a PC that looks elsewhere the setter would reset the map UI (stops a targeter) and VTRSync would send a
-    // PlayerCount command; RestoreViewAfterCmd's direct write back to the old view would then leave the target map counted +1
-    // for good (VTRSync.lastMovedToMapId). Before the pin the command map was current on every PC, so a jump to it called no
-    // setter, and RestoreViewAfterCmd undoes any other switch, so the skip changes no view a command leaves behind.
+    // FIXES row 109 fixup (review 15 Nov): a CameraJumper jump or select inside a map command (AsyncTimeComp.executingCmdMap)
+    // runs in full only on a PC that views the target map, and there with its view (ShowView), so CameraJumper calls no
+    // Game.CurrentMap setter. On a PC that looks elsewhere the setter would reset the map UI (stops a targeter) and VTRSync would
+    // send a PlayerCount command; RestoreViewAfterCmd's direct write back to the old view would then leave the target map
+    // counted +1 for good (VTRSync.lastMovedToMapId). Before the pin the command map was current on every PC, so a jump to it
+    // called no setter, and RestoreViewAfterCmd undoes any other switch, so the skip changes no view a command leaves behind.
+    // A CameraJumper select still changes the selection on that PC (SelectWithoutViewSwitch). Not covered: simulation code that
+    // calls Find.Selector.Select directly on a thing of a map this PC does not view still calls the setter there (vanilla
+    // Selector.SelectInternal, `map != Find.CurrentMap`), so VTRSync stays off by one for that case.
     internal static bool SkipViewSwitchInMapCmd(Map target) =>
         depth > 0 && game != null && game == Current.Game && AsyncTimeComp.executingCmdMap != null && target != viewedMap;
+
+    // FIXES row 109 fixup 2 (review 15 Nov): the selection part of CameraJumper.TrySelectInternal on a PC that skips it
+    // (SkipViewSwitchInMapCmd). Inside a map command the selection is synced input (SyncUtil), so every PC must end with the
+    // viewer's Find.Selector.selected. The viewer runs ClearSelection and Select(thing) with Find.CurrentMap == thing.Map, so
+    // Selector.SelectInternal calls no setter. Here a view scope makes thing.Map current for that call the same way (a direct
+    // index write, as ShowView), so the list comes out the same without the setter, the camera jump or the sounds
+    // (playSound: false; the sound does not touch the list). Same guards as vanilla TrySelectInternal.
+    internal static void SelectWithoutViewSwitch(Thing thing)
+    {
+        if (Current.ProgramState != ProgramState.Playing || !thing.Spawned || !thing.def.selectable) return;
+        var g = game;
+        viewScope++;
+        g.currentMapIndex = IndexIn(g, thing.Map);
+        try
+        {
+            Find.Selector.ClearSelection();
+            Find.Selector.Select(thing, playSound: false);
+        }
+        finally
+        {
+            viewScope--;
+            if (g == game && g == Current.Game)
+                g.currentMapIndex = IndexIn(g, viewScope > 0 ? viewedMap : pinnedMap);
+        }
+    }
 
     private static Map MapAt(Game g, int index) => index >= 0 && index < g.Maps.Count ? g.Maps[index] : null;
 
@@ -415,7 +443,8 @@ static class WorldCurrentMapPinViewPatch
 }
 
 // Camera jumps and selection by simulation code run with this client's view, as WorldCurrentMapPinViewPatch. Inside a map
-// command they are skipped on a PC that does not view the target map (SkipViewSwitchInMapCmd, FIXES row 109 fixup).
+// command they are skipped on a PC that does not view the target map (SkipViewSwitchInMapCmd, FIXES row 109 fixup); a skipped
+// select still sets that PC's selection as the viewer's (SelectWithoutViewSwitch, fixup 2).
 [HarmonyPatch(typeof(CameraJumper), "TryJumpInternal", new[] { typeof(IntVec3), typeof(Map), typeof(CameraJumper.MovementMode) })]
 static class WorldCurrentMapPinCameraJumpPatch
 {
@@ -438,7 +467,12 @@ static class WorldCurrentMapPinCameraSelectPatch
 {
     static bool Prefix(Thing thing, ref bool __state)
     {
-        if (WorldCurrentMapPin.SkipViewSwitchInMapCmd(thing?.Map)) return false;
+        // A null thing runs vanilla (which throws) on every PC, as before the pin
+        if (thing != null && WorldCurrentMapPin.SkipViewSwitchInMapCmd(thing.Map))
+        {
+            WorldCurrentMapPin.SelectWithoutViewSwitch(thing);
+            return false;
+        }
         __state = WorldCurrentMapPin.ShowView();
         return true;
     }
