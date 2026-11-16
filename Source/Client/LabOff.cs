@@ -33,6 +33,32 @@ namespace Multiplayer.Client
             return a != null && row >= 0 && row < a.Length && a[row];
         }
 
+        // Reads -mplaboff from Environment.GetCommandLineArgs() in both forms: one token "-mplaboff=117,152" (any case), or
+        // "-mplaboff 117 152" / "-mplaboff 117,152" (the tokens after it up to the next one starting with "-"; cmd.exe splits at = and ,).
+        // Returns the ints joined with ",", or null when there is no flag or no int.
+        static string ReadArg()
+        {
+            var args = Environment.GetCommandLineArgs();
+            var parts = new System.Collections.Generic.List<string>();
+            var key = "-" + Arg;
+            for (var i = 0; i < args.Length; i++)
+            {
+                var t = args[i];
+                if (t == null) continue;
+                if (t.StartsWith(key + "=", StringComparison.OrdinalIgnoreCase))
+                    parts.AddRange(t.Substring(key.Length + 1).Split(','));
+                else if (string.Equals(t, key, StringComparison.OrdinalIgnoreCase))
+                {
+                    for (var j = i + 1; j < args.Length && args[j] != null && !args[j].StartsWith("-"); j++)
+                        parts.AddRange(args[j].Split(','));
+                }
+            }
+            var ints = new System.Collections.Generic.List<string>();
+            foreach (var p in parts)
+                if (int.TryParse(p.Trim(), out var n)) ints.Add(n.ToString());
+            return ints.Count == 0 ? null : string.Join(",", ints.ToArray());
+        }
+
         static void Init()
         {
             lock (typeof(LabOff))
@@ -40,7 +66,8 @@ namespace Multiplayer.Client
                 if (ready) return;
                 try
                 {
-                    if (GenCommandLine.TryGetCommandLineArg(Arg, out var value) && !string.IsNullOrEmpty(value))
+                    var value = ReadArg();
+                    if (!string.IsNullOrEmpty(value))
                     {
                         if (AccessTools.TypeByName(GateType) == null)
                             Log.Warning("[LabOff] -" + Arg + "=" + value + " ignored: " + GateType + " is not loaded");
