@@ -349,7 +349,7 @@ public static class FactionCreator
             try
             {
                 generatingIdeo = true;
-                newIdeo = GenerateIdeo(chooseIdeoInfo, def);
+                newIdeo = GenerateIdeo(chooseIdeoInfo, LabOff.Row(236) ? Find.Scenario.playerFaction.factionDef : def);
             }
             finally
             {

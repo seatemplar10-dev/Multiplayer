@@ -31,7 +31,7 @@ namespace Multiplayer.Client
         public RoundModeEnum roundMode;
 
         // No more traces are recorded past SyncOpinion.MaxTraceHashes, on every side alike (see SyncCoordinator)
-        public bool TraceCapReached => desyncStackTraceHashes.Count >= SyncOpinion.MaxTraceHashes;
+        public bool TraceCapReached => !LabOff.Row(17) && desyncStackTraceHashes.Count >= SyncOpinion.MaxTraceHashes;
 
         // Set when a trace was dropped because of the cap; SyncCoordinator.FinishLocalOpinion logs it
         public bool tracesCapped;

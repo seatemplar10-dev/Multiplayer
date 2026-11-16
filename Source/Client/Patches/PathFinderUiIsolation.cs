@@ -52,6 +52,9 @@ namespace Multiplayer.Client.Patches
         new[] { typeof(IntVec3), typeof(LocalTargetInfo), typeof(TraverseParms), typeof(PathFinderCostTuning?), typeof(PathEndMode), typeof(PathRequest.IPathGridCustomizer) })]
     static class PathFinderUiIsolation
     {
+        // Lab off-switch (-mplaboff=117): the patch is not installed (= the build without this file)
+        static bool Prepare() => !LabOff.Row(117);
+
         static int depth;
         static PathFinderMapData activeMapData;
 
@@ -210,6 +213,8 @@ namespace Multiplayer.Client.Patches
     [HarmonyPatch(typeof(PathFinderMapData), nameof(PathFinderMapData.GatherData))]
     static class PathFinderMapData_GatherData_UiSkip
     {
+        static bool Prepare() => !LabOff.Row(117);
+
         [HarmonyPriority(Priority.First)]
         static bool Prefix(PathFinderMapData __instance, ref bool __result)
         {

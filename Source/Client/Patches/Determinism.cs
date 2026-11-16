@@ -909,7 +909,7 @@ namespace Multiplayer.Client.Patches
 
         static void Prefix(LetterStack __instance, out int __state)
         {
-            __state = Multiplayer.Client != null && cache(__instance) == null && Find.UniqueIDsManager != null
+            __state = Multiplayer.Client != null && !LabOff.Row(165) && cache(__instance) == null && Find.UniqueIDsManager != null
                 ? nextLetterID(Find.UniqueIDsManager) : int.MinValue;
         }
 

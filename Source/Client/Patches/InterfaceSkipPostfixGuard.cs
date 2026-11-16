@@ -29,7 +29,7 @@ namespace Multiplayer.Client.Patches
         // Discover (the simulation crawled to ~40 ticks a minute). ArbiterLauncher passes the switch on to the arbiter.
         public const string OffArg = "mplabnoc13";
         public const string CheckArg = "mplabc13check";
-        public static readonly bool Off = GenCommandLine.CommandLineArgPassed(OffArg);
+        public static readonly bool Off = GenCommandLine.CommandLineArgPassed(OffArg) || LabOff.Row(114);
 
         // Who changes patches after the session start (the rescan trigger): the first 20, logged from the main thread
         static readonly System.Collections.Concurrent.ConcurrentQueue<string> changes = new();

@@ -155,6 +155,8 @@ namespace Multiplayer.Client.Networking
                 psi.ArgumentList.Add("-" + global::Multiplayer.Client.Patches.PathJobsComplete.OffArg);
             if (global::Multiplayer.Client.Patches.InterfaceSkipPostfixGuard.Off)
                 psi.ArgumentList.Add("-" + global::Multiplayer.Client.Patches.InterfaceSkipPostfixGuard.OffArg);
+            if (global::Multiplayer.Client.LabOff.Raw != null)
+                psi.ArgumentList.Add("-" + global::Multiplayer.Client.LabOff.Arg + "=" + global::Multiplayer.Client.LabOff.Raw);
 
             psi.RedirectStandardOutput = true;
             psi.RedirectStandardError = true;
