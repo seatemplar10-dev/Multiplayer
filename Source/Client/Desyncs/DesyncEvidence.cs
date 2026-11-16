@@ -43,7 +43,9 @@ namespace Multiplayer.Client.Desyncs
             return maps;
         }
 
-        // P1, the side that found the desync: this PC's thing lists of the maps with different things, for the desync zip
+        // P1, the side that found the desync: this PC's thing lists of the maps with different things, for the desync zip.
+        // Runs in a field initializer of SaveableDesyncInfo: never throws; on an exception it logs it and returns the lists
+        // made so far
         public static List<(int mapId, string text)> ThingListsForSplit(ClientSyncOpinion local, ClientSyncOpinion remote)
         {
             var result = new List<(int, string)>();
@@ -66,18 +68,41 @@ namespace Multiplayer.Client.Desyncs
             return result;
         }
 
+        private const string ThingsFilePrefix = "Things-";
+        private const int MaxThingsFiles = 10;
+
         // P1, the side that answers a trace request (host or arbiter): it does not know which check failed on the other PC,
-        // so it writes every map, to its own MpDesyncs folder. Returns the path, or why there is none.
-        public static string WriteAllMapsFile(string side, int opinionTick)
+        // so it writes every map, to its own MpDesyncs folder. Returns the path, or why there is none. things: rows written,
+        // bytes: the zip's size. The zip is written under a temp name and moved into place when complete, so a file with the
+        // final name is always whole. A file from an earlier session (older than this process) is overwritten, one from
+        // this session is kept. Things-*.zip are pruned to the newest 10, as Desync-*.zip in SaveableDesyncInfo.
+        public static string WriteAllMapsFile(string side, int opinionTick, out int things, out long bytes)
         {
+            things = 0;
+            bytes = 0;
             try
             {
-                var path = Path.Combine(Multiplayer.DesyncsDir, $"Things-{side}-{opinionTick}.zip");
-                if (File.Exists(path)) return $"{path} (written by an earlier request for this tick)";
+                var path = Path.Combine(Multiplayer.DesyncsDir, $"{ThingsFilePrefix}{side}-{opinionTick}.zip");
+                if (File.Exists(path) && File.GetLastWriteTime(path) >= ProcessStartTime())
+                {
+                    bytes = new FileInfo(path).Length;
+                    return $"{path} (written by an earlier request for this tick)";
+                }
 
-                using var zip = MpZipFile.Open(path, ZipArchiveMode.Create);
-                foreach (var map in Find.Maps ?? [])
-                    zip.AddEntry($"{side}_things_map{map.uniqueID}.txt", ThingList(map, side));
+                var temp = path + ".tmp";
+                File.Delete(temp);
+                using (var zip = MpZipFile.Open(temp, ZipArchiveMode.Create))
+                {
+                    foreach (var map in Find.Maps ?? [])
+                    {
+                        zip.AddEntry($"{side}_things_map{map.uniqueID}.txt", ThingList(map, side, out int rows));
+                        things += rows;
+                    }
+                }
+
+                File.Move(temp, path, true);
+                bytes = new FileInfo(path).Length;
+                PruneThingsFiles();
                 return path;
             }
             catch (Exception e)
@@ -87,9 +112,39 @@ namespace Multiplayer.Client.Desyncs
             }
         }
 
+        private static DateTime ProcessStartTime()
+        {
+            try
+            {
+                return System.Diagnostics.Process.GetCurrentProcess().StartTime;
+            }
+            catch
+            {
+                return DateTime.MaxValue; // unknown: never reuse an existing file
+            }
+        }
+
+        private static void PruneThingsFiles()
+        {
+            var files = new DirectoryInfo(Multiplayer.DesyncsDir).GetFiles($"{ThingsFilePrefix}*.zip");
+            foreach (var f in files.OrderByDescending(f => f.LastWriteTime).Skip(MaxThingsFiles))
+            {
+                try
+                {
+                    f.Delete();
+                }
+                catch (Exception)
+                {
+                }
+            }
+        }
+
         // listerThings.AllThings and the map's three tick lists, in list order, motes left out (the counts match the list
         // checkpoint counts in the desync message). Columns: thingIDNumber def position spawned
-        public static string ThingList(Map map, string side)
+        public static string ThingList(Map map, string side) => ThingList(map, side, out _);
+
+        // rows: the things and nulls listed, every list counted
+        public static string ThingList(Map map, string side, out int rows)
         {
             var comp = map.AsyncTime();
             var text = new StringBuilder(1 << 20);
@@ -97,30 +152,35 @@ namespace Multiplayer.Client.Desyncs
                             $"{comp?.mapTicks.ToString() ?? "?"}, MP timer {TickPatch.Timer}, motes left out as in the list checkpoints");
             text.AppendLine("Columns: thingIDNumber def position spawned (tick lists: bucket b<n>, reg = to register, dereg = to deregister)");
 
-            AppendList(text, "listerThings.AllThings", null, map.listerThings.AllThings);
+            rows = AppendList(text, "listerThings.AllThings", null, map.listerThings.AllThings);
             if (comp != null)
             {
-                AppendTickList(text, "tickListNormal", comp.tickListNormal);
-                AppendTickList(text, "tickListRare", comp.tickListRare);
-                AppendTickList(text, "tickListLong", comp.tickListLong);
+                rows += AppendTickList(text, "tickListNormal", comp.tickListNormal);
+                rows += AppendTickList(text, "tickListRare", comp.tickListRare);
+                rows += AppendTickList(text, "tickListLong", comp.tickListLong);
             }
 
             return text.ToString();
         }
 
-        private static void AppendTickList(StringBuilder text, string name, TickList tickList)
+        private static int AppendTickList(StringBuilder text, string name, TickList tickList)
         {
+            int rows = 0;
             for (int b = 0; b < tickList.thingLists.Count; b++)
-                AppendList(text, name, $"b{b}", tickList.thingLists[b]);
-            AppendList(text, name, "reg", tickList.thingsToRegister);
-            AppendList(text, name, "dereg", tickList.thingsToDeregister);
+                rows += AppendList(text, name, $"b{b}", tickList.thingLists[b]);
+            rows += AppendList(text, name, "reg", tickList.thingsToRegister);
+            rows += AppendList(text, name, "dereg", tickList.thingsToDeregister);
+            return rows;
         }
 
-        private static void AppendList(StringBuilder text, string name, string segment, List<Thing> things)
+        // A thing with no def is listed (def "null"): ListCheckpoint.IsPerPc reads t.def.category and would throw
+        private static bool Listed(Thing t) => t == null || t.def == null || !ListCheckpoint.IsPerPc(t);
+
+        private static int AppendList(StringBuilder text, string name, string segment, List<Thing> things)
         {
             int count = 0;
             foreach (var t in things)
-                if (t == null || !ListCheckpoint.IsPerPc(t))
+                if (Listed(t))
                     count++;
 
             text.AppendLine($"## {name}{(segment != null ? " " + segment : "")}: {count}");
@@ -132,12 +192,14 @@ namespace Multiplayer.Client.Desyncs
                     continue;
                 }
 
-                if (ListCheckpoint.IsPerPc(t)) continue;
+                if (!Listed(t)) continue;
                 var pos = t.positionInt;
                 text.Append(t.thingIDNumber).Append(' ').Append(t.def?.defName ?? "null").Append(' ')
                     .Append(pos.x).Append(',').Append(pos.y).Append(',').Append(pos.z).Append(' ')
                     .Append(t.Spawned ? "spawned" : "unspawned").AppendLine();
             }
+
+            return count;
         }
 
         // P2: this PC's tracing state, for the warning and the reports. traceHashes: the opinion's trace hash count,
@@ -150,18 +212,27 @@ namespace Multiplayer.Client.Desyncs
             $"trace hashes in the opinion {traceHashes?.ToString() ?? "unknown (opinion not kept)"}";
 
         // P2, the side that found the desync: a warning when either side has no trace hashes, logged and returned for the zip
+        // Runs in a field initializer of SaveableDesyncInfo: never throws (that would lose the whole desync report)
         public static string WarnIfNoTraces(ClientSyncOpinion local, ClientSyncOpinion remote)
         {
-            int l = local.desyncStackTraceHashes.Count, r = remote.desyncStackTraceHashes.Count;
-            if (l > 0 && r > 0) return null;
+            try
+            {
+                int l = local.desyncStackTraceHashes.Count, r = remote.desyncStackTraceHashes.Count;
+                if (l > 0 && r > 0) return null;
 
-            var who = l == 0 && r == 0 ? "neither side has" : r == 0 ? "the remote side (host or arbiter) sent no" : "this PC has no";
-            var warning = $"Multiplayer: this desync has no trace comparison: {who} trace hashes for opinion start tick " +
-                          $"{local.startTick} (local {l}, remote {r}). This PC: {TracingState(l)}. The remote side's tracing " +
-                          "mode is in host_traces.txt of the desync zip. Tracing mode None, a CPU without stack tracing or a " +
-                          "session hosted with desync traces off gives 0 trace hashes.";
-            Log.Warning(warning);
-            return warning;
+                var who = l == 0 && r == 0 ? "neither side has" : r == 0 ? "the remote side (host or arbiter) sent no" : "this PC has no";
+                var warning = $"Multiplayer: this desync has no trace comparison: {who} trace hashes for opinion start tick " +
+                              $"{local.startTick} (local {l}, remote {r}). This PC: {TracingState(l)}. The remote side's tracing " +
+                              "mode is in host_traces.txt of the desync zip. Tracing mode None, a CPU without stack tracing or a " +
+                              "session hosted with desync traces off gives 0 trace hashes.";
+                Log.Warning(warning);
+                return warning;
+            }
+            catch (Exception e)
+            {
+                Log.Error($"Multiplayer: the trace warning for the desync report failed: {e}");
+                return null;
+            }
         }
     }
 }

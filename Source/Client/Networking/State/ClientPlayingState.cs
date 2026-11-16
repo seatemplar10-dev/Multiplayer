@@ -193,7 +193,9 @@ namespace Multiplayer.Client
                 // warning here when there is nothing to send (P2), and this side writes its thing lists of every map (P1)
                 var traceHashes = info?.desyncStackTraceHashes.Count;
                 var tracing = DesyncEvidence.TracingState(traceHashes);
-                var thingsFile = DesyncEvidence.WriteAllMapsFile(side, packet.tick);
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                var thingsFile = DesyncEvidence.WriteAllMapsFile(side, packet.tick, out int things, out long bytes);
+                Log.Message($"[MP] desync thing list: {things} things, {watch.ElapsedMilliseconds} ms, {bytes} B");
                 header += $"Tracing here: {tracing}\nThing lists here: {thingsFile}\n";
                 if (traceHashes is null or 0)
                     Log.Warning($"Multiplayer: desync trace request for opinion tick {packet.tick} (player {packet.playerId}): " +
