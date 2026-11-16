@@ -16,7 +16,7 @@ namespace Multiplayer.Client
         // The rows THIS dll can switch. 114 also keeps its old name -mplabnoc13 (InterfaceSkipPostfixGuard.OffArg).
         static readonly int[] Owned = { 17, 114, 117, 152, 165, 236, 407 };
 
-        static bool ready;
+        static volatile bool ready;
         static string raw;
         static bool[] on;   // null when no row is off
 
@@ -50,7 +50,7 @@ namespace Multiplayer.Client
                             var any = false;
                             foreach (var p in value.Split(','))
                             {
-                                if (!int.TryParse(p.Trim(), out var r) || Array.IndexOf(Owned, r) < 0) continue;
+                                if (!int.TryParse(p.Trim(), out var r) || Array.IndexOf(Owned, r) < 0 || flags[r]) continue;
                                 flags[r] = true;
                                 any = true;
                                 Log.Warning("[LabOff] OFF row " + r + " dll=Multiplayer");

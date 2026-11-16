@@ -423,7 +423,9 @@ namespace Multiplayer.Client
         {
             if (gameScenarioBeforePages != null)
             {
-                Current.Game.Scenario = gameScenarioBeforePages;
+                // Lab switch (row 236 only): off = the scenario stays replaced, as before the fix. The xenotype part below is row 237 and stays on.
+                if (!LabOff.Row(236))
+                    Current.Game.Scenario = gameScenarioBeforePages;
                 gameScenarioBeforePages = null;
             }
 

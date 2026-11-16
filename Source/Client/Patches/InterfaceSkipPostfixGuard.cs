@@ -46,7 +46,7 @@ namespace Multiplayer.Client.Patches
         {
             if (Off)
             {
-                Log.Warning($"Multiplayer: -{OffArg}: C13 postfix guard (FIXES row 114) NOT applied - lab switch");
+                Log.Warning($"Multiplayer: -{OffArg} or -{LabOff.Arg}=114: C13 postfix guard (FIXES row 114) NOT applied - lab switch");
                 return;
             }
             started = true;
