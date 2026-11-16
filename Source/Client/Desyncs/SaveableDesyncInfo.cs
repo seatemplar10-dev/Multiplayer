@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -30,6 +31,10 @@ public class SaveableDesyncInfo(
     private readonly Task<string> metadata = Task.Run(MetadataGenerator.Generate);
     private readonly Task<FileInfo> replay = Task.Run(SaveReplayIfApplicable);
 
+    // FIXES row 315: built with the report in SyncCoordinator.HandleDesync, on the main thread, after the PC stopped ticking
+    private readonly string traceWarning = DesyncEvidence.WarnIfNoTraces(local, remote);
+    private readonly List<(int mapId, string text)> thingLists = DesyncEvidence.ThingListsForSplit(local, remote);
+
     public bool ReadyToSave => metadata.IsCompleted && replay.IsCompleted;
 
     public void Save([CanBeNull] HostInfo hostInfo)
@@ -45,6 +50,9 @@ public class SaveableDesyncInfo(
 
             zip.AddEntry("local_traces.txt", GetLocalTraces());
             zip.AddEntry("host_traces.txt", hostInfo?.Traces ?? "No host traces");
+
+            foreach (var (mapId, text) in thingLists)
+                zip.AddEntry($"local_things_map{mapId}.txt", text);
 
             zip.AddEntry("local_jitted_methods.txt", JittedMethods.GetJittedMethodsString());
             zip.AddEntry("host_jitted_methods.txt", hostInfo?.JittedMethods ?? "No host jitted methods");
@@ -78,7 +86,7 @@ public class SaveableDesyncInfo(
 
     private string GetLocalTraces()
     {
-        var traceMessage = "";
+        var traceMessage = traceWarning != null ? traceWarning + "\n\n" : "";
         var localCount = local.desyncStackTraceHashes.Count;
         var remoteCount = remote.desyncStackTraceHashes.Count;
         int count = Math.Min(localCount, remoteCount);
@@ -87,14 +95,14 @@ public class SaveableDesyncInfo(
         {
             if (count == 0)
             {
-                return $"No traces (remote: {remoteCount}, local: {localCount})";
+                return traceMessage + $"No traces (remote: {remoteCount}, local: {localCount})";
             }
 
-            traceMessage = "Note: trace hashes are equal between local and remote\n\n";
+            traceMessage += "Note: trace hashes are equal between local and remote\n\n";
         }
         else if (!diffAtFound)
         {
-            traceMessage = "Note: traces differ in amount, but the existing ones are equal. This means that a tick" +
+            traceMessage += "Note: traces differ in amount, but the existing ones are equal. This means that a tick" +
                            " has ended sooner on one of the connection sides\n\n";
         }
 
@@ -120,6 +128,9 @@ public class SaveableDesyncInfo(
             .AppendLine($"Rimworld Developer Mode - Client|||{Prefs.DevMode}")
             .AppendLine($"Desync Tracing Mode - Client|||{Multiplayer.settings.desyncTracingMode}{(DeferredStackTracing.HashManagedFrames ? " +frame hash" : "")}")
             .AppendLine($"Fast Trace Cache - Client|||{(FastManagedTrace.Supported ? FastManagedTrace.Stats : "unwinder not supported here")}")
+            .AppendLine($"Trace Hashes - Local / Remote|||{local.desyncStackTraceHashes.Count} / {remote.desyncStackTraceHashes.Count}")
+            .AppendLine($"Trace Warning|||{traceWarning ?? "none"}")
+            .AppendLine($"Thing Lists In Zip|||{(thingLists.Count > 0 ? string.Join(", ", thingLists.Select(t => $"local_things_map{t.mapId}.txt")) : "none (no map with different things)")}")
             .AppendLine("\n###Server Info###")
             .AppendLine($"Player Count|||{Multiplayer.session.players.Count}")
             .AppendLine($"Async time active|||{Multiplayer.GameComp.asyncTime}")

@@ -188,6 +188,19 @@ namespace Multiplayer.Client
                 // PlayerManager.OnDesync asks the arbiter while it is Playing, the traces may be the arbiter's
                 var side = Multiplayer.arbiterInstance ? "arbiter" : Multiplayer.LocalServer != null ? "host" : "client";
                 var header = $"Traces from: {side} {Multiplayer.username} (opinion start tick {packet.tick}, trace {packet.diffAt})\n";
+
+                // FIXES row 315: the reply (host_traces.txt in the other PC's zip) names this side's tracing state, with a
+                // warning here when there is nothing to send (P2), and this side writes its thing lists of every map (P1)
+                var traceHashes = info?.desyncStackTraceHashes.Count;
+                var tracing = DesyncEvidence.TracingState(traceHashes);
+                var thingsFile = DesyncEvidence.WriteAllMapsFile(side, packet.tick);
+                header += $"Tracing here: {tracing}\nThing lists here: {thingsFile}\n";
+                if (traceHashes is null or 0)
+                    Log.Warning($"Multiplayer: desync trace request for opinion tick {packet.tick} (player {packet.playerId}): " +
+                                $"this {side} has no trace hashes to send ({tracing}); that player's desync report will " +
+                                "have no trace comparison");
+                Log.Message($"Multiplayer: desync thing lists of every map on this {side}: {thingsFile}");
+
                 var response = header + (info?.GetFormattedStackTracesForRange(packet.diffAt) ??
                     $"Traces not available: no opinion with start tick {packet.tick} among the {known.Count} kept here" +
                     (known.Count > 0 ? $" (start ticks {known[0].startTick}..{known[known.Count - 1].startTick})" : ""));

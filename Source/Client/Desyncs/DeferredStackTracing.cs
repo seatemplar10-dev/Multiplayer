@@ -29,7 +29,7 @@ namespace Multiplayer.Client.Desyncs
 
         public static int acc;
 
-        private static bool SupportsDeferredStackTracing =>
+        internal static bool SupportsDeferredStackTracing =>
             RuntimeInformation.ProcessArchitecture is Architecture.X64 or Architecture.X86;
 
         // NoInlining and no tail calls below: the traces skip a fixed number of frames (this one and the trace method),
