@@ -26,11 +26,28 @@ namespace Multiplayer.Client
             get { if (!ready) Init(); return raw; }
         }
 
+        // Trigger line: ONE log line the first time a row's switch is read in this process (same text in every fork).
+        static readonly bool[] hitDone = new bool[1000];
+        static void Hit(int row, bool off)
+        {
+            try
+            {
+                if (row < 0 || row >= hitDone.Length || hitDone[row]) return;
+                hitDone[row] = true;
+                var tick = -1;
+                try { tick = Find.TickManager?.TicksGame ?? -1; } catch (Exception) { tick = -1; }
+                Log.Message("[LabOff] HIT row " + row + " state=" + (off ? "off" : "on") + " tick=" + tick);
+            }
+            catch (Exception) { }
+        }
+
         public static bool Row(int row)
         {
             if (!ready) Init();
             var a = on;
-            return a != null && row >= 0 && row < a.Length && a[row];
+            var r = a != null && row >= 0 && row < a.Length && a[row];
+            Hit(row, r);
+            return r;
         }
 
         // Reads -mplaboff from Environment.GetCommandLineArgs() in both forms: one token "-mplaboff=117,152" (any case), or
