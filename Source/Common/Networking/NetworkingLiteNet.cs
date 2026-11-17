@@ -11,7 +11,10 @@ namespace Multiplayer.Common
         {
             if (server.playerManager.OnPreConnect(req.RemoteEndPoint.Address) is { } disconnectReason)
             {
-                req.Reject(new ServerDisconnectPacket { reason = disconnectReason }.Serialize().data);
+                // FIXES row 416: data must not be null. BindRemaining reads data.Length, so a null array threw here, the reject was never
+                // sent, and LiteNetLib's PollEvents dropped every later network event of that batch (it detaches the whole list first).
+                req.Reject(new ServerDisconnectPacket { reason = disconnectReason, data = [] }.Serialize().data);
+                ServerLog.Log($"Rejected a connection request: {disconnectReason}");
                 return;
             }
 
