@@ -7,17 +7,36 @@ using Verse;
 
 namespace Multiplayer.Client.Factions;
 
+// FIXES row 418: the caravan / map gen / gravship setters below swap the faction's world data (storyWatcher, history, research...)
+// together with ofPlayer, as FactionExtensions.PushFaction does. The bare FactionContext.Push changed only ofPlayer, so on a PC of
+// another faction Find.StoryWatcher stayed that PC's own and Pawn.SpawnSetup raised the wrong faction's greatestPopulation.
+// -mplaboff=418 restores the bare push (lab control arm).
+static class CaravanFactionScope
+{
+    public static void Push(Faction faction)
+    {
+        if (!LabOff.Row(418)) FactionExtensions.PushFaction(null, faction);
+        else FactionContext.Push(faction);
+    }
+
+    public static void Pop()
+    {
+        if (!LabOff.Row(418)) FactionExtensions.PopFaction();
+        else FactionContext.Pop();
+    }
+}
+
 [HarmonyPatch(typeof(SettlementUtility), nameof(SettlementUtility.AttackNow))]
 static class AttackNowPatch
 {
     static void Prefix(Caravan caravan)
     {
-        FactionContext.Push(caravan.Faction);
+        CaravanFactionScope.Push(caravan.Faction);
     }
 
     static void Finalizer()
     {
-        FactionContext.Pop();
+        CaravanFactionScope.Pop();
     }
 }
 
@@ -31,7 +50,7 @@ static class MapGenFactionPatch
         if (Multiplayer.Client != null && factionToSet == null)
             Log.Warning($"Couldn't set the faction context for map gen at {tile.tileId}: no world object and no stored faction.");
 
-        FactionContext.Push(factionToSet);
+        CaravanFactionScope.Push(factionToSet);
     }
 
     private static Faction GetFactionAt(PlanetTile tile)
@@ -60,7 +79,7 @@ static class MapGenFactionPatch
 
     static void Finalizer()
     {
-        FactionContext.Pop();
+        CaravanFactionScope.Pop();
     }
 }
 
@@ -69,12 +88,12 @@ static class CaravanEnterFactionPatch
 {
     static void Prefix(Caravan caravan)
     {
-        FactionContext.Push(caravan.Faction);
+        CaravanFactionScope.Push(caravan.Faction);
     }
 
     static void Finalizer()
     {
-        FactionContext.Pop();
+        CaravanFactionScope.Pop();
     }
 }
 
@@ -147,12 +166,12 @@ static class GravshipArriveNewMapFactionPatch
 {
     static void Prefix(Gravship gravship)
     {
-        FactionContext.Push(gravship.Faction);
+        CaravanFactionScope.Push(gravship.Faction);
     }
 
     static void Finalizer()
     {
-        FactionContext.Pop();
+        CaravanFactionScope.Pop();
     }
 }
 
