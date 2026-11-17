@@ -193,6 +193,8 @@ namespace Multiplayer.Client
                             return;
                         }
                         HediffWithComps parent = data.Read<HediffWithComps>();
+                        // lab switch row 316 (package G, 17 Nov): off = old behaviour (return before reading compIndex on a null parent)
+                        if (parent == null && LabOff.Row(316)) return;
                         // Always consume compIndex: the writer sends it after the parent, so a null parent must not leave it unread
                         var compIndex = data.Read<ushort>();
                         if (parent == null) {
@@ -916,6 +918,8 @@ namespace Multiplayer.Client
                             return;
                         }
                         ThingWithComps parent = data.Read<ThingWithComps>();
+                        // lab switch row 316 (package G, 17 Nov): off = old behaviour (return before reading compIndex on a null parent)
+                        if (parent == null && LabOff.Row(316)) return;
                         // Always consume compIndex: the writer sends it after the parent, so a null parent must not leave it unread
                         var compIndex = data.Read<ushort>();
                         if (parent == null) {

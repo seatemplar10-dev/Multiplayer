@@ -61,13 +61,14 @@ namespace Multiplayer.Client.Patches
 
         static bool Prefix()
         {
+            // lab switch row 129 (package G, 17 Nov): off = old behaviour (the re-pick runs outside the simulation)
             // Namely FloatMenuUtility.GetMeleeAttackAction
-            return !Cancel;
+            return !(Cancel && !LabOff.Row(129));
         }
 
         static void Postfix(Pawn_MeleeVerbs __instance, Thing target, ref Verb __result)
         {
-            if (Cancel)
+            if (Cancel && !LabOff.Row(129))
                 __result = __instance.GetUpdatedAvailableVerbsList(false).FirstOrDefault(ve => ve.GetSelectionWeight(target) != 0).verb;
         }
     }
@@ -77,7 +78,8 @@ namespace Multiplayer.Client.Patches
     [HarmonyPatch(typeof(Pawn_MeleeVerbs), nameof(Pawn_MeleeVerbs.ChooseMeleeVerb))]
     static class ChooseMeleeVerbPatch
     {
-        static bool Prefix() => !TryGetMeleeVerbPatch.Cancel;
+        // lab switch row 129 (package G, 17 Nov): off = old behaviour (direct ChooseMeleeVerb calls run outside the simulation)
+        static bool Prefix() => !(TryGetMeleeVerbPatch.Cancel && !LabOff.Row(129));
     }
 
     [HarmonyPatch(typeof(PawnBioAndNameGenerator), nameof(PawnBioAndNameGenerator.TryGetRandomUnusedSolidName))]

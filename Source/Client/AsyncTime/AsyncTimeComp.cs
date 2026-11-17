@@ -265,7 +265,12 @@ namespace Multiplayer.Client
             // With the write, a command that removes its own map (dev destroy map, a gizmo that abandons or leaves a pocket map)
             // made Game.DeinitAndRemoveMap switch the view on EVERY PC: map UI, and VTRSync's PlayerCount command from every PC.
             // The pin moves off a removed map, so only the PC that viewed it switches, after the command (FlushViewSwitch).
-            WorldCurrentMapPin.PinMap(map);
+            // lab switch row 109 (package G, 17 Nov): off = old behaviour (direct Game.currentMapIndex write, no pin, no FlushViewSwitch)
+            var oldView109 = LabOff.Row(109);
+            if (oldView109)
+                Current.Game.currentMapIndex = (sbyte)map.Index;
+            else
+                WorldCurrentMapPin.PinMap(map);
 
             executingCmdMap = map;
             TickPatch.currentExecutingCmdIssuedBySelf = cmd.IsIssuedBySelf() && !TickPatch.Simulating;
@@ -340,13 +345,23 @@ namespace Multiplayer.Client
 
                 // FIXES row 109: after PostContext (the command's random state and faction), like the map tick's pin. The outermost
                 // Unpin puts back this PC's view, or leaves a removed view to FlushViewSwitch below.
-                WorldCurrentMapPin.Unpin();
-                RestoreViewAfterCmd(prevMap);
+                // lab switch row 109 (package G, 17 Nov): off = old behaviour (TrySetCurrentMap)
+                if (oldView109)
+                {
+                    if (!keepTheMap)
+                        OldTrySetCurrentMap109(prevMap);
+                }
+                else
+                {
+                    WorldCurrentMapPin.Unpin();
+                    RestoreViewAfterCmd(prevMap);
+                }
 
                 keepTheMap = false;
 
                 Multiplayer.game.sync.TryAddCommandRandomState(randState);
-                WorldCurrentMapPin.FlushViewSwitch();
+                if (!oldView109)
+                    WorldCurrentMapPin.FlushViewSwitch();
 
                 eventCount++;
 
@@ -364,6 +379,20 @@ namespace Multiplayer.Client
         // before: the setter's MapUI.Notify_SwitchedMap would stop
         // that targeter. A view the command removed is switched by WorldCurrentMapPin.FlushViewSwitch (maps[0] and the world
         // view, as vanilla's removal).
+        // lab switch row 109 (package G, 17 Nov): the pre-fix TrySetCurrentMap, only reached with the switch off
+        private static void OldTrySetCurrentMap109(Map map)
+        {
+            if (!Find.Maps.Contains(map))
+            {
+                Current.Game.CurrentMap = Find.Maps.Any() ? Find.Maps[0] : null;
+                Find.World.renderer.wantedMode = WorldRenderMode.Planet;
+            }
+            else
+            {
+                Current.Game.currentMapIndex = (sbyte)map.Index;
+            }
+        }
+
         private void RestoreViewAfterCmd(Map prevMap)
         {
             var view = keepTheMap ? map : prevMap;

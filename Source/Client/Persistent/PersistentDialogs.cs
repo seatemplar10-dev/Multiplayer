@@ -515,7 +515,8 @@ namespace Multiplayer.Client
             {
                 get
                 {
-                    if (mode == DelegateMode && value == null && !delegateBuilt && Scribe.mode != LoadSaveMode.Saving)
+                    // lab switch row 167 (package G, 17 Nov): off = old behaviour (delegate built in ResolvingCrossRefs only, never here)
+                    if (mode == DelegateMode && value == null && !delegateBuilt && Scribe.mode != LoadSaveMode.Saving && !LabOff.Row(167))
                         BuildDelegate();
                     return value;
                 }
@@ -682,7 +683,10 @@ namespace Multiplayer.Client
                     }
 
                     // 1.7 lab (FIXES row 167): was built in ResolvingCrossRefs (see Resolved)
-                    if (Scribe.mode == LoadSaveMode.PostLoadInit && value == null && !delegateBuilt)
+                    // lab switch row 167 (package G, 17 Nov): off = old behaviour (built in ResolvingCrossRefs, before the target reference resolves)
+                    if (Scribe.mode == LoadSaveMode.ResolvingCrossRefs && value == null && !delegateBuilt && LabOff.Row(167))
+                        BuildDelegate();
+                    if (Scribe.mode == LoadSaveMode.PostLoadInit && value == null && !delegateBuilt && !LabOff.Row(167))
                         BuildDelegate();
                 }
             }

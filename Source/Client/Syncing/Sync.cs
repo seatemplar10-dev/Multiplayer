@@ -22,7 +22,9 @@ namespace Multiplayer.Client
 
         public static void PostInitHandlers()
         {
-            ValidateAll(lateHandlers: true);
+            // lab switch row 379 (package G, 17 Nov): off = old behaviour (late handlers are not validated)
+            if (!LabOff.Row(379))
+                ValidateAll(lateHandlers: true);
 
             handlers.SortStable((a, b) => a.version.CompareTo(b.version));
 

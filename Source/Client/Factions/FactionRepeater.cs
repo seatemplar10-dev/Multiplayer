@@ -184,6 +184,13 @@ namespace Multiplayer.Client
         // (lastCheckCanRunTick == TicksGame) is cleared first, or the second faction reused the first faction's result
         static void TickFactionStoryteller(FactionWorldData d)
         {
+            // lab switch row 280 (package G, 17 Nov): off = old behaviour (shared World StoryState, per-tick CanFireNow cache kept)
+            if (LabOff.Row(280))
+            {
+                d.storyteller.StorytellerTick();
+                return;
+            }
+
             foreach (var def in DefDatabase<IncidentDef>.AllDefsListForReading)
                 if (def.workerInt != null)
                     def.workerInt.lastCheckCanRunTick = -1;

@@ -150,7 +150,8 @@ namespace Multiplayer.Client
             // compared it (ThingDef: Humanoid Alien Races' ThingDef_AlienRace). A mod setting that removes ThingDefs on one PC
             // only (AdMech Armoury's faction weapons) went unseen. Each such database goes in under DefInfo.SoftPrefix: the
             // host compares it and both sides log a difference, but it does not refuse the join (not enforced before either)
-            foreach (var defType in GenDefDatabase.AllDefTypesWithDatabases())
+            // lab switch row 215 (package G, 17 Nov): off = old behaviour (databases of subclassed def types are not compared); runs at load
+            foreach (var defType in LabOff.Row(215) ? Enumerable.Empty<Type>() : GenDefDatabase.AllDefTypesWithDatabases())
             {
                 if (defType.Assembly != typeof(Game).Assembly) continue;
                 if (IgnoredVanillaDefTypes.Contains(defType)) continue;

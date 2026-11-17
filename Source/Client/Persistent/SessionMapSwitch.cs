@@ -10,6 +10,8 @@ namespace Multiplayer.Client
     {
         public static void SwitchToMapOrWorld(Map map)
         {
+            // lab switch row 313 (package G, 17 Nov): off = old behaviour (call the API's Session.SwitchToMapOrWorld; breaks only if an old 0MultiplayerAPI.dll wins the load)
+            if (LabOff.Row(313)) { HarmonyLib.AccessTools.Method(typeof(global::Multiplayer.API.Session), "SwitchToMapOrWorld").Invoke(null, new object[] { map }); return; } // protected in the API, so by reflection
             if (map == null)
             {
                 Find.World.renderer.wantedMode = WorldRenderMode.Planet;
