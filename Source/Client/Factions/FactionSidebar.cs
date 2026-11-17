@@ -381,7 +381,7 @@ namespace Multiplayer.Client
                 if (Current.Game.InitData?.startingAndOptionalPawns is { } pawns)
                     for (int i = 0; i < Find.GameInitData.startingPawnCount; i++)
                     {
-                        FactionCreator.SendPawn(playerId, pawns[i]);
+                        FactionCreator.SendPawnAnySize(playerId, pawns[i]); // FIXES row 421: a pawn over one command's size goes in parts
                         startingPawns.Add(pawns[i]);
                     }
 

@@ -23,6 +23,7 @@ public static class FactionCreator
     public static void ClearData()
     {
         pawnStore.Clear();
+        pawnParts.Clear();
     }
 
     [SyncMethod(exposeParameters = new[] { 1 })]
@@ -430,6 +431,77 @@ public static class FactionCreator
         MpLog.Error("No starting pawns config found to access startingPawnCount");
 
         return 0;
+    }
+
+    // 1.7 lab (FIXES row 421, lab run hc74c 17 Nov 23:15:54, client Settle with the Character Editor pawn 'Sea'): SendPawn ships the pawn's
+    // whole save XML inside ONE sync command, and a command holds at most 65535 bytes on the way up (ClientCommandPacket.Bind) and on the
+    // way down (ServerCommandPacket.Bind; ConnectionBase.MaxSinglePacketSize 65536). The pawn was 70299 bytes: "WriterException: Remaining
+    // bytes too big (70299>65535)" on the issuer, nothing sent, the Settle died. A pawn whose XML is over PawnPartSize now goes as several
+    // SendPawnPart commands. One PC's commands keep their order through the server, so every PC gets the parts in the same order and reads
+    // the pawn inside the last part's command with the same reader SendPawn's exposed argument uses. Smaller pawns go the old way.
+    // lab switch row 421 (18 Nov): off = old behaviour (always the one SendPawn command)
+    public const int PawnPartSize = 32768; // a byte[] argument holds under 65535 bytes (SyncSerialization array length is a ushort)
+    private static Dictionary<int, List<byte[]>> pawnParts = new();
+
+    public static void SendPawnAnySize(int playerId, Pawn p)
+    {
+        if (LabOff.Row(421))
+        {
+            SendPawn(playerId, p);
+            return;
+        }
+
+        byte[] xml = ScribeUtil.WriteExposable(p);
+        if (xml.Length <= PawnPartSize)
+        {
+            SendPawn(playerId, p);
+            return;
+        }
+
+        int count = (xml.Length + PawnPartSize - 1) / PawnPartSize;
+        Log.Message($"MP: starting pawn {p} is {xml.Length} bytes, sent in {count} parts (row 421)");
+        for (int i = 0; i < count; i++)
+        {
+            int start = i * PawnPartSize;
+            byte[] part = new byte[Math.Min(PawnPartSize, xml.Length - start)];
+            Array.Copy(xml, start, part, 0, part.Length);
+            SendPawnPart(playerId, i, count, part);
+        }
+    }
+
+    [SyncMethod]
+    public static void SendPawnPart(int playerId, int index, int count, byte[] part)
+    {
+        if (index == 0)
+            pawnParts.Remove(playerId); // a new pawn starts: drop a half-received one
+
+        var parts = pawnParts.GetOrAddNew(playerId);
+        if (part == null || count < 1 || index != parts.Count || index >= count)
+        {
+            pawnParts.Remove(playerId);
+            Log.Error($"MP: starting pawn part {index}/{count} of player {playerId} is out of order, pawn dropped (row 421)");
+            return;
+        }
+
+        parts.Add(part);
+        if (parts.Count < count)
+            return;
+
+        pawnParts.Remove(playerId);
+
+        int total = 0;
+        foreach (var b in parts)
+            total += b.Length;
+
+        byte[] xml = new byte[total];
+        int at = 0;
+        foreach (var b in parts)
+        {
+            Array.Copy(b, 0, xml, at, b.Length);
+            at += b.Length;
+        }
+
+        pawnStore.GetOrAddNew(playerId).Add((Pawn)ExposableSerialization.ReadExposable(typeof(Pawn), xml));
     }
 }
 public record FactionCreationData : ISyncSimple

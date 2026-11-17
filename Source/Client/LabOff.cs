@@ -4,7 +4,7 @@ using Verse;
 
 namespace Multiplayer.Client
 {
-    // Lab mutation switch: -mplaboff=<rows> puts the listed fixes back to their old behaviour (FIXES rows 17, 114, 117, 152, 165, 236, 407, 109, 129, 167, 215, 280, 313, 316, 379).
+    // Lab mutation switch: -mplaboff=<rows> puts the listed fixes back to their old behaviour (FIXES rows 17, 114, 117, 152, 165, 236, 407, 109, 129, 167, 215, 280, 313, 316, 379, 421).
     // No flag = every Row() call is false and nothing changes. The flag counts only when the lab harness type SeaMPLab.MPLab is loaded:
     // the shipped game has no harness dll, so a stray -mplaboff there is ignored.
     // The command line and the gate are read lazily at the first Row() / Raw use (not in a static constructor), so SeaMPLab is looked up
@@ -14,7 +14,7 @@ namespace Multiplayer.Client
         public const string Arg = "mplaboff";
         const string GateType = "SeaMPLab.MPLab";
         // The rows THIS dll can switch. 114 also keeps its old name -mplabnoc13 (InterfaceSkipPostfixGuard.OffArg).
-        static readonly int[] Owned = { 17, 114, 117, 152, 165, 236, 407, 417, 199, 191, 92, 35, 78, 115, 122, 256, 418, 419, 109, 129, 167, 215, 280, 313, 316, 379, 97, 202, 211 };
+        static readonly int[] Owned = { 17, 114, 117, 152, 165, 236, 407, 417, 199, 191, 92, 35, 78, 115, 122, 256, 418, 419, 109, 129, 167, 215, 280, 313, 316, 379, 97, 202, 211, 421 };
 
         static volatile bool ready;
         static string raw;
