@@ -441,6 +441,9 @@ public static class FactionCreator
     // the pawn inside the last part's command with the same reader SendPawn's exposed argument uses. Smaller pawns go the old way.
     // lab switch row 421 (18 Nov): off = old behaviour (always the one SendPawn command)
     public const int PawnPartSize = 32768; // a byte[] argument holds under 65535 bytes (SyncSerialization array length is a ushort)
+    // Opus review 17 Nov: every pawn that fits in one command keeps the old SendPawn path. 512 bytes leave room for the command header
+    // (method id, playerId, the byte length prefix; about 16 bytes measured from source).
+    public const int OneCommandMaxXml = 65535 - 512;
     private static Dictionary<int, List<byte[]>> pawnParts = new();
 
     public static void SendPawnAnySize(int playerId, Pawn p)
@@ -452,7 +455,7 @@ public static class FactionCreator
         }
 
         byte[] xml = ScribeUtil.WriteExposable(p);
-        if (xml.Length <= PawnPartSize)
+        if (xml.Length <= OneCommandMaxXml)
         {
             SendPawn(playerId, p);
             return;
