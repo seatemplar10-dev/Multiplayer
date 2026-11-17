@@ -26,6 +26,8 @@ namespace Multiplayer.Client.Patches
             if (Multiplayer.Client == null || flyer.Destroyed || !flyer.Spawned) return;
             if (flyer.GetDirectlyHeldThings().Count == 0) return;   // DestinationPos reads the flying thing
             Recompute(flyer);
+            // lab switch row 256 (wave 2, 17 Nov): off = old behaviour
+            if (!LabOff.Row(256))
             try { OwnRecompute(flyer.GetType())?.Invoke(flyer, null); }
             catch (Exception e) { Log.ErrorOnce($"Multiplayer: {flyer.GetType()}.RecomputePosition threw (FIXES row 256): {e.InnerException ?? e}", 2560256); }
         }

@@ -68,7 +68,8 @@ public class QuestPartsListForReadingPatch
             // or each quest threat fires once per player faction (err-admech-storyteller, 22 Oct; it was hidden because
             // Magos Xenobiologis' IsDefeated postfix threw before Storyteller.MakeIncidentsForInterval reached its quest loop)
             // (updating is also set outside a Multiplayer game, StorytellerTickPatch.Prefix, so check Client first)
-            var foreignHome = Multiplayer.Client != null && Multiplayer.GameComp.multifaction &&
+            // lab switch row 199 (wave 2, 17 Nov): off = old behaviour
+            var foreignHome = Multiplayer.Client != null && !LabOff.Row(199) && Multiplayer.GameComp.multifaction &&
                 Multiplayer.MapContext?.ParentFaction is { IsPlayer: true } owner && owner != Faction.OfPlayer;
             __result = __result.Where(questPart => {
                 if (foreignHome && questPart is IIncidentMakerQuestPart)

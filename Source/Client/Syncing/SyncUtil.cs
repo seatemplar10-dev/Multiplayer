@@ -96,7 +96,8 @@ namespace Multiplayer.Client
                 // pawn with an addiction threw while its needs were read back) left a push open. Vanilla's Rand.EnsureStateStackEmpty
                 // repairs it later, at a moment that differs per PC, so one PC ran a whole tick inside the stale push (no traces, other
                 // draws). Every PC runs the same command and leaks the same pushes, so popping them here keeps the PCs equal.
-                if (Rand.stateStack.Count > randDepth)
+                // lab switch row 191 (wave 2, 17 Nov): off = old behaviour
+                if (!LabOff.Row(191) && Rand.stateStack.Count > randDepth)
                 {
                     Log.Warning($"MP: command {handler} left {Rand.stateStack.Count - randDepth} Rand state push(es) open; popped at the end of the command (row 191)");
                     while (Rand.stateStack.Count > randDepth)

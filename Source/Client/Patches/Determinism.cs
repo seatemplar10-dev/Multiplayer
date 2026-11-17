@@ -871,7 +871,8 @@ namespace Multiplayer.Client.Patches
     {
         static void Postfix()
         {
-            if (Multiplayer.Client == null) return;
+            // lab switch row 35 (wave 2, 17 Nov): off = old behaviour
+            if (Multiplayer.Client == null || LabOff.Row(35)) return;
             SortPairs(PawnApparelGenerator.allApparelPairs);
             SortPairs(PawnWeaponGenerator.allWeaponPairs);
         }

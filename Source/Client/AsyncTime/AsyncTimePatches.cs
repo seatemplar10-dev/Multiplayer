@@ -107,7 +107,8 @@ namespace Multiplayer.Client.AsyncTime
             // 1.7 lab (FIXES row 92): mirror TickListAdd / vanilla TickManager.TickListFor - an IThingHolder is in the Normal
             // list whatever its ticker. Before, a corpse (IThingHolder, Rare ticker) was never removed: despawned corpses kept
             // ticking, re-spawned ones ticked twice, and only a reload cleared them (= different tick lists per PC)
-            if (t is IThingHolder || tickerType == TickerType.Normal)
+            // lab switch row 92 (wave 2, 17 Nov): off = old behaviour
+            if ((t is IThingHolder && !LabOff.Row(92)) || tickerType == TickerType.Normal)
                 comp.tickListNormal.DeregisterThing(t);
             else if (tickerType == TickerType.Rare)
                 comp.tickListRare.DeregisterThing(t);

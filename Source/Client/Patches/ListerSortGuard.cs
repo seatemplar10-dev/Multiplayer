@@ -19,6 +19,9 @@ namespace Multiplayer.Client.Patches
         static readonly MethodInfo CopyOfDef = AccessTools.Method(typeof(ListerSortGuard), nameof(ThingsOfDefCopy));
         static readonly MethodInfo CopyInGroup = AccessTools.Method(typeof(ListerSortGuard), nameof(ThingsInGroupCopy));
 
+        // lab switch row 115 (wave 2, 17 Nov): off = old behaviour
+        static bool Prepare() => !LabOff.Row(115);
+
         static IEnumerable<MethodBase> TargetMethods()
         {
             yield return AccessTools.Method(typeof(JobGiver_OptimizeApparel), nameof(JobGiver_OptimizeApparel.TryCreateRecolorJob));

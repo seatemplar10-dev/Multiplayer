@@ -339,6 +339,9 @@ namespace Multiplayer.Client.Desyncs
     [HarmonyPatch(typeof(UniqueIDsManager), nameof(UniqueIDsManager.GetNextMessageID))]
     static class MessageIdTraceIgnore
     {
+        // lab switch row 78 (wave 2, 17 Nov): off = old behaviour
+        static bool Prepare() => !LabOff.Row(78);
+
         static void Prefix() => DeferredStackTracing.ignoreTraces++;
         static void Finalizer() => DeferredStackTracing.ignoreTraces--;
     }
@@ -346,6 +349,9 @@ namespace Multiplayer.Client.Desyncs
     [HarmonyPatch(typeof(UniqueIDsManager), nameof(UniqueIDsManager.GetNextLetterID))]
     static class LetterIdTraceIgnore
     {
+        // lab switch row 78 (wave 2, 17 Nov): off = old behaviour
+        static bool Prepare() => !LabOff.Row(78);
+
         static void Prefix() => DeferredStackTracing.ignoreTraces++;
         static void Finalizer() => DeferredStackTracing.ignoreTraces--;
     }

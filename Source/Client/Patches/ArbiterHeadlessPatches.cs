@@ -97,7 +97,8 @@ namespace Multiplayer.Client
     [HarmonyPatch(typeof(MusicManagerPlay), nameof(MusicManagerPlay.MusicUpdate))]
     static class ArbiterHeadlessNoMusic
     {
-        static bool Prepare() => Multiplayer.arbiterInstance || GenCommandLine.CommandLineArgPassed("headless");
+        // lab switch row 122 (wave 2, 17 Nov): off = old behaviour
+        static bool Prepare() => !LabOff.Row(122) && (Multiplayer.arbiterInstance || GenCommandLine.CommandLineArgPassed("headless"));
 
         static bool Prefix() => false;
     }
