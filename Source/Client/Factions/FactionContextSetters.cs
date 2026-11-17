@@ -42,7 +42,8 @@ static class MapGenFactionPatch
         if (mapParent != null && mapParent.Faction is { IsPlayer: true })
             return mapParent.Faction;
 
-        var caravan = worldObjectsHolder.PlayerControlledCaravanAt(tile);
+        // FIXES row 417: first caravan of ANY player faction on the tile, in Caravans order (same on every PC); the old lookup only saw this PC's own faction.
+        var caravan = !LabOff.Row(417) ? worldObjectsHolder.Caravans.Find(c => c.Tile == tile && c.Faction is { IsPlayer: true }) : worldObjectsHolder.PlayerControlledCaravanAt(tile);
         if (caravan != null)
             return caravan.Faction;
 

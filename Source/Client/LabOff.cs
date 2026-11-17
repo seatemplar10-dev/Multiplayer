@@ -14,7 +14,7 @@ namespace Multiplayer.Client
         public const string Arg = "mplaboff";
         const string GateType = "SeaMPLab.MPLab";
         // The rows THIS dll can switch. 114 also keeps its old name -mplabnoc13 (InterfaceSkipPostfixGuard.OffArg).
-        static readonly int[] Owned = { 17, 114, 117, 152, 165, 236, 407 };
+        static readonly int[] Owned = { 17, 114, 117, 152, 165, 236, 407, 417 };
 
         static volatile bool ready;
         static string raw;
