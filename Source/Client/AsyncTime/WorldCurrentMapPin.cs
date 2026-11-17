@@ -299,6 +299,8 @@ public static class WorldCurrentMapPin
     internal static void BeforeMapRemoved(Game g, Map map)
     {
         if (g != game || map == null) return;
+        // lab switch row 97 (package G, 17 Nov): off = old behaviour (pins stay on a map being removed: vanilla DeinitAndRemoveMap sees it as the current map)
+        if (LabOff.Row(97)) return;
 
         var replacement = ChooseMap(g.Maps, map);
         for (int i = 0; i < outerPins.Count; i++)
@@ -312,7 +314,8 @@ public static class WorldCurrentMapPin
 
     internal static void AfterMapRemoved(Game g)
     {
-        if (g == game)
+        // lab switch row 97 (package G, 17 Nov): off = old behaviour
+        if (g == game && !LabOff.Row(97))
             g.currentMapIndex = IndexIn(g, pinnedMap);
     }
 

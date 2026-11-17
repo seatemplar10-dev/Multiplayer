@@ -173,7 +173,9 @@ namespace Multiplayer.Client
             // incident queue, which Template skips - those incidents never fired. Tick only that queue, once per world tick
             // (its fire ticks are world ticks); no interval incidents for the spectator (err-admech-storyteller, 22 Oct)
             if (!runOriginal && AsyncTime.AsyncWorldTimeComp.tickingWorld && Multiplayer.GameComp.multifaction &&
-                Faction.OfPlayer == Multiplayer.WorldComp.spectatorFaction)
+                Faction.OfPlayer == Multiplayer.WorldComp.spectatorFaction &&
+                // lab switch row 211 (package G, 17 Nov): off = old behaviour (spectator incident queue never ticked)
+                !LabOff.Row(211))
                 Find.Storyteller.incidentQueue.IncidentQueueTick();
 
             return runOriginal;

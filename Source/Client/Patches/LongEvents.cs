@@ -64,6 +64,8 @@ namespace Multiplayer.Client.Patches
         static bool Prefix(Action action)
         {
             if (ScribeUtil.readingExposable == 0 || LongEventHandler.currentEvent != null || !UnityData.IsInMainThread) return true;
+            // lab switch row 202 (package G, 17 Nov): off = old behaviour (action runs at once, mid-load)
+            if (LabOff.Row(202)) return true;
             ScribeUtil.deferredWhenFinished.Add(action);
             return false;
         }
