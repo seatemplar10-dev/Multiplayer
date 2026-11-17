@@ -313,6 +313,22 @@ namespace Multiplayer.Client
             }, __result);
         }
 
+        // FIXES row 419: options other mods append in later postfixes (Milira: bill.SetPawnRestriction(pawn)) get the same watch.
+        [MpPostfix(typeof(Dialog_BillConfig), nameof(Dialog_BillConfig.GeneratePawnRestrictionOptions))]
+        [HarmonyPriority(Priority.Low)]
+        static IEnumerable<DropdownMenuElement<Pawn>> BillPawnRestrictions_LatePostfix(IEnumerable<DropdownMenuElement<Pawn>> __result, Bill ___bill)
+        {
+            if (LabOff.Row(419)) return __result;
+
+            return WatchUnwrappedDropdowns(() =>
+            {
+                SyncBillPawnRestriction.Watch(___bill);
+                SyncBillSlavesOnly.Watch(___bill);
+                SyncBillMechsOnly.Watch(___bill);
+                SyncBillNonMechsOnly.Watch(___bill);
+            }, __result);
+        }
+
         [MpPostfix(typeof(HostilityResponseModeUtility), nameof(HostilityResponseModeUtility.DrawResponseButton_GenerateMenu))]
         static IEnumerable<DropdownMenuElement<HostilityResponseMode>> HostilityResponse_Postfix(IEnumerable<DropdownMenuElement<HostilityResponseMode>> __result, Pawn p)
         {
@@ -537,6 +553,18 @@ namespace Multiplayer.Client
             {
                 if (entry.option.action != null)
                     entry.option.action = SyncFieldUtil.FieldWatchPrefix + watchAction + entry.option.action + SyncFieldUtil.FieldWatchPostfix;
+                yield return entry;
+            }
+        }
+
+        static IEnumerable<DropdownMenuElement<T>> WatchUnwrappedDropdowns<T>(Action watchAction, IEnumerable<DropdownMenuElement<T>> dropdowns)
+        {
+            var watchPrefixMethod = ((Action)SyncFieldUtil.FieldWatchPrefix).Method;
+            foreach (var entry in dropdowns)
+            {
+                var action = entry.option.action;
+                if (action != null && action.GetInvocationList()[0].Method != watchPrefixMethod)
+                    entry.option.action = SyncFieldUtil.FieldWatchPrefix + watchAction + action + SyncFieldUtil.FieldWatchPostfix;
                 yield return entry;
             }
         }
