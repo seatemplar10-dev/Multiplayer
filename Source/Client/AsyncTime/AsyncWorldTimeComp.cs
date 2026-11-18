@@ -231,6 +231,11 @@ public class AsyncWorldTimeComp : IExposable, ITickable
 
             if (cmdType == CommandType.CreateJoinPoint)
             {
+                // Row 124: zero the per-map autosave counters on EVERY PC at this command's tick, before the save below, so the
+                // join point carries 0 and a host that rejoins from it does not autosave on its first tick. Must stay before the early return.
+                if (!LabOff.Row(124))
+                    Multiplayer.game?.mapComps.Do(m => m.autosaveCounter = 0);
+
                 if (Multiplayer.session?.ConnectedToStandaloneServer == true && !TickPatch.currentExecutingCmdIssuedBySelf)
                     return;
 
