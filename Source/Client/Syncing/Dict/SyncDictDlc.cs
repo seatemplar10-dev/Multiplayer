@@ -117,6 +117,7 @@ namespace Multiplayer.Client
                 (ByteReader data) => {
                     var lord = ReadSync<Lord>(data);
 
+                    if (lord == null && LabOff.Row(316)) return null; // row 316 off: pre-fix order
                     // Always consume the bestower: the writer sends it after the lord, so a null lord must not leave it unread
                     var bestower = ReadSync<Pawn>(data);
 
@@ -199,6 +200,7 @@ namespace Multiplayer.Client
                 (ByteReader data) => {
                     var assignments = (MpRitualAssignments)ReadSync<RitualRoleAssignments>(data);
 
+                    if (assignments == null && LabOff.Row(316)) return null; // row 316 off: pre-fix order
                     // Always consume the ritual: the writer sends it after the assignments, so null assignments must not leave it unread
                     var ritual = ReadSync<Precept_Ritual>(data); // todo handle ritual becoming null?
 
@@ -216,6 +218,7 @@ namespace Multiplayer.Client
                 (ByteReader data) => {
                     var assignment = (MpRitualAssignments)ReadSync<RitualRoleAssignments>(data);
 
+                    if (assignment == null && LabOff.Row(316)) return null; // row 316 off: pre-fix order
                     // Always consume the ritual: the writer sends it after the assignments, so null assignments must not leave it unread
                     var ritual = ReadSync<Precept_Ritual>(data); // todo handle ritual becoming null?
 
@@ -400,6 +403,7 @@ namespace Multiplayer.Client
                 {
                     var assignments = (MpPsychicRitualAssignments)ReadSync<PsychicRitualRoleAssignments>(data);
 
+                    if (assignments == null && LabOff.Row(316)) return null; // row 316 off: pre-fix order
                     // Always consume the ritual def: the writer sends it after the assignments, so null assignments must not leave it unread
                     var ritual = ReadSync<PsychicRitualDef>(data); // todo handle ritual becoming null?
 

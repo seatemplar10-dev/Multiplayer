@@ -176,7 +176,7 @@ namespace Multiplayer.Client
                         if (hediffComp != null) {
                             var typeIndex = Array.IndexOf(hediffCompTypes, hediffComp.GetType());
                             // -1 would wrap to 65535, the reader's null sentinel, while parent and compIndex are still written
-                            if (typeIndex < 0)
+                            if (typeIndex < 0 && !LabOff.Row(316))
                                 throw new SerializationException($"Unknown HediffComp type {hediffComp.GetType()}");
                             ushort index = (ushort)typeIndex;
                             data.Write(index);
@@ -205,7 +205,7 @@ namespace Multiplayer.Client
                             hediffComp = parent.comps.Find(c => c.props.compClass == compType);
                         else
                         {
-                            hediffComp = parent.comps.Where(c => c.props.compClass == compType).ElementAtOrDefault(compIndex);
+                            hediffComp = LabOff.Row(316) ? parent.comps.Where(c => c.props.compClass == compType).ElementAt(compIndex) : parent.comps.Where(c => c.props.compClass == compType).ElementAtOrDefault(compIndex);
                             if (hediffComp == null)
                                 Log.Warning($"Multiplayer :: SyncDictionary.HediffComp: no comp of type {compType} at index {compIndex} on {parent}");
                         }
@@ -311,6 +311,7 @@ namespace Multiplayer.Client
                 (ByteReader data) => {
                     BillStack billStack = ReadSync<BillStack>(data);
 
+                    if (billStack == null && LabOff.Row(316)) return null; // row 316 off: pre-fix order (null stack returns before loadID)
                     // Always consume loadID: the writer sends it after the bill stack, so a null stack must not leave it unread
                     int id = data.ReadInt32();
 
@@ -342,7 +343,7 @@ namespace Multiplayer.Client
                     if (data.isWriting) {
                         if (comp != null) {
                             var typeIndex = Array.IndexOf(abilityCompTypes, comp.GetType());
-                            if (typeIndex < 0) // -1 would wrap to the null sentinel while the parent is still written
+                            if (typeIndex < 0 && !LabOff.Row(316)) // -1 would wrap to the null sentinel while the parent is still written
                                 throw new SerializationException($"Unknown AbilityComp type {comp.GetType()}");
                             ushort index = (ushort)typeIndex;
                             data.Write(index);
@@ -386,6 +387,7 @@ namespace Multiplayer.Client
                         reader.Seek(pos);
 
                         var owner = sync.Read<IVerbOwner>();
+                        if (owner == null && LabOff.Row(316)) return; // row 316 off: pre-fix (null owner returns, loadID unread)
                         if (!ownerWasWritten)
                             return;
                         var loadID = sync.Read<string>();
@@ -580,6 +582,7 @@ namespace Multiplayer.Client
                 (ByteReader data) => {
                     var settable = ReadSync<IPlantToGrowSettable>(data);
 
+                    if (settable == null && LabOff.Row(316)) return null; // row 316 off: pre-fix order
                     // Always consume the settables list: the writer sends it after settable, so a null settable must not leave it unread
                     var settables = ReadSync<List<IPlantToGrowSettable>>(data);
 
@@ -617,6 +620,7 @@ namespace Multiplayer.Client
                 (ByteReader data) => {
                     CompTransporter transporter = ReadSync<CompTransporter>(data);
 
+                    if (transporter == null && LabOff.Row(316)) return null; // row 316 off: pre-fix order
                     // Always consume the transporters list: the writer sends it after transComp, so a null transComp must not leave it unread
                     List<CompTransporter> transporters = ReadSync<List<CompTransporter>>(data);
 
@@ -901,7 +905,7 @@ namespace Multiplayer.Client
                         if (comp != null) {
                             var typeIndex = Array.IndexOf(thingCompTypes, comp.GetType());
                             // -1 would wrap to 65535, the reader's null sentinel, while parent and compIndex are still written
-                            if (typeIndex < 0)
+                            if (typeIndex < 0 && !LabOff.Row(316))
                                 throw new SerializationException($"Unknown ThingComp type {comp.GetType()}");
                             ushort index = (ushort)typeIndex;
                             data.Write(index);
@@ -930,7 +934,7 @@ namespace Multiplayer.Client
                             comp = parent.AllComps.Find(c => c.props.compClass == compType);
                         else
                         {
-                            comp = parent.AllComps.Where(c => c.props.compClass == compType).ElementAtOrDefault(compIndex);
+                            comp = LabOff.Row(316) ? parent.AllComps.Where(c => c.props.compClass == compType).ElementAt(compIndex) : parent.AllComps.Where(c => c.props.compClass == compType).ElementAtOrDefault(compIndex);
                             if (comp == null)
                                 Log.Warning($"Multiplayer :: SyncDictionary.ThingComp: no comp of type {compType} at index {compIndex} on {parent}");
                         }
@@ -987,7 +991,7 @@ namespace Multiplayer.Client
                     if (data.isWriting) {
                         if (comp != null) {
                             var typeIndex = Array.IndexOf(mapCompTypes, comp.GetType());
-                            if (typeIndex < 0) // -1 would wrap to the null sentinel while the map is still written
+                            if (typeIndex < 0 && !LabOff.Row(316)) // -1 would wrap to the null sentinel while the map is still written
                                 throw new SerializationException($"Unknown MapComponent type {comp.GetType()}");
                             ushort index = (ushort)typeIndex;
                             data.Write(index);
@@ -1034,7 +1038,7 @@ namespace Multiplayer.Client
                     if (data.isWriting) {
                         if (comp != null) {
                             var typeIndex = Array.IndexOf(worldObjectCompTypes, comp.GetType());
-                            if (typeIndex < 0) // -1 would wrap to the null sentinel while the parent is still written
+                            if (typeIndex < 0 && !LabOff.Row(316)) // -1 would wrap to the null sentinel while the parent is still written
                                 throw new SerializationException($"Unknown WorldObjectComp type {comp.GetType()}");
                             ushort index = (ushort)typeIndex;
                             data.Write(index);
@@ -1061,7 +1065,7 @@ namespace Multiplayer.Client
                     if (data.isWriting) {
                         if (comp != null) {
                             var typeIndex = Array.IndexOf(worldCompTypes, comp.GetType());
-                            if (typeIndex < 0) // -1 would wrap to the null sentinel while the world is still written
+                            if (typeIndex < 0 && !LabOff.Row(316)) // -1 would wrap to the null sentinel while the world is still written
                                 throw new SerializationException($"Unknown WorldComponent type {comp.GetType()}");
                             ushort index = (ushort)typeIndex;
                             data.Write(index);
