@@ -435,7 +435,7 @@ namespace Multiplayer.Client.Patches
             public readonly Dictionary<MethodBase, HashSet<MethodInfo>> postfixesOf = new();        // original -> its foreign postfixes
             public readonly Dictionary<MethodBase, C13Plan.Decision> decisions = new();             // originals C13Plan decided on
             public readonly HashSet<MethodBase> ties = new();                                       // a foreign patch ties with ours
-            public bool prefilter = true;   // row 359: false = build a C13Plan entry for every original (the -mplabc13check reference)
+            public bool prefilter = !LabOff.Row(359);   // row 359 (lab switch -mplaboff=359: false = the pre-fix pass, every original gets an entry): false = build a C13Plan entry for every original (the -mplabc13check reference)
             public int entriesBuilt;        // originals that reached C13Plan.Decide
 
             public IEnumerable<MethodBase> TargetsOf(MethodInfo p) =>
