@@ -25,7 +25,7 @@ namespace Multiplayer.Client.Patches
         [TweakValue("Multiplayer")] public static bool pinMapInMapTicks = true;
         static bool leakLogged;
 
-        struct Saved { public UnityEngine.Random.State unity; public bool pinned; public int salt; }
+        struct Saved { public UnityEngine.Random.State unity; public bool pinned; public int salt; public bool oldC9; public Map viewed; }
         static readonly Stack<Saved> stack = new();
         static int systemRandomSalt;
 
@@ -33,7 +33,9 @@ namespace Multiplayer.Client.Patches
         // is in place. Called on every PC at the same point of the simulation.
         public static void Enter(Map map)
         {
-            var s = new Saved { unity = UnityEngine.Random.state, salt = systemRandomSalt };
+            var g = Current.Game;   // not the CurrentMap getter: it throws on a stale index
+            Map viewedNow = g != null && g.currentMapIndex >= 0 && g.currentMapIndex < g.Maps.Count ? g.Maps[g.currentMapIndex] : null;
+            var s = new Saved { unity = UnityEngine.Random.state, viewed = viewedNow, salt = systemRandomSalt };
             // C3: Unity's own generator runs from the synced state for this context, without advancing Verse.Rand; its previous
             // (per-PC) state comes back in Exit, so interface code keeps its own sequence.
             ulong st = Rand.StateCompressed;
@@ -45,8 +47,17 @@ namespace Multiplayer.Client.Patches
             // Rand.PopState, because restoring the view can run UI code.
             if (map != null && pinMapInMapTicks && AsyncTimeComp.tickingMap == map && Current.Game != null && map.Index >= 0)
             {
-                s.pinned = true;
-                WorldCurrentMapPin.PinMap(map);
+                if (LabOff.Row(97))
+                {
+                    // lab switch row 97: off = the pre-fix C9 code (45d5fd69^), a direct write, no WorldCurrentMapPin.PinMap
+                    s.oldC9 = true;
+                    Current.Game.currentMapIndex = (sbyte)map.Index;   // the field, like ExecuteCmd: the setter notifies UI and VTRSync
+                }
+                else
+                {
+                    s.pinned = true;
+                    WorldCurrentMapPin.PinMap(map);
+                }
             }
             stack.Push(s);
         }
@@ -58,6 +69,17 @@ namespace Multiplayer.Client.Patches
             var s = stack.Pop();
             UnityEngine.Random.state = s.unity;
             systemRandomSalt = s.salt;   // a nested context (quest getters, world-tick incidents) must not reset the outer one's count
+            if (s.oldC9 && Current.Game != null)
+            {
+                // pre-fix C9 restore (45d5fd69^)
+                if (s.viewed == null) Current.Game.currentMapIndex = -1;
+                else
+                {
+                    int i = Find.Maps.IndexOf(s.viewed);
+                    if (i >= 0) Current.Game.currentMapIndex = (sbyte)i;
+                    else if (Current.Game.currentMapIndex >= Find.Maps.Count) Current.Game.currentMapIndex = (sbyte)(Find.Maps.Count - 1);
+                }
+            }
             return s.pinned;
         }
 
