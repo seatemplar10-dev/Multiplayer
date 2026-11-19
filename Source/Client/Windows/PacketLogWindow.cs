@@ -102,7 +102,8 @@ namespace Multiplayer.Client
             var node = UINode.FromLogNode(hasLogger.Log.current);
             // FIXES row 322: the session's writer log stores a stack trace for every sync command. Building it costs
             // milliseconds (Harmony enhances every frame), and the log is a dev tool, so only pay for it in dev mode.
-            if (storeStackTrace && Prefs.DevMode) node.AttachStackTrace();
+            // Lab switch (row 322 only): off = a stack trace for every node, as before the fix.
+            if (storeStackTrace && (Prefs.DevMode || LabOff.Row(322))) node.AttachStackTrace();
             nodes.Add(node);
         }
     }

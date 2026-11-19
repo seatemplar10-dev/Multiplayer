@@ -9,8 +9,10 @@ namespace Multiplayer.Client.Util
     // What is left is background work such as Map Preview generating a world tile's map, which runs on one PC only.
     public static class ForeignThread
     {
+        // Lab switch (row 187 only): off = always false, as before the fix.
         public static bool Now =>
-            !UnityData.IsInMainThread
+            !LabOff.Row(187)
+            && !UnityData.IsInMainThread
             && !(LongEventHandler.currentEvent != null && Thread.CurrentThread == LongEventHandler.eventThread);
     }
 }

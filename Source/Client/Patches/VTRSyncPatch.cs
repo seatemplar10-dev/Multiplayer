@@ -35,7 +35,8 @@ namespace Multiplayer.Client.Patches
             // (SendViewedMapUpdate returns while reloading, and nobody's viewed map changes), so after every reload VTR
             // sat at MaximumVtr and vanilla-class projectiles hopped every 15 ticks ("slow-motion" volleys, lab mp19).
             // A constant takes no per-client input, so it stays deterministic.
-            __result = __instance.Spawned ? VTRSync.MinimumVtr : VTRSync.MaximumVtr;
+            // Lab switch (row 5 only): off = the map's synced rate, as before the fix.
+            __result = __instance.Spawned ? (LabOff.Row(5) ? VTRSync.GetSynchronizedUpdateRate(__instance) : VTRSync.MinimumVtr) : VTRSync.MaximumVtr;
             return false;
         }
     }

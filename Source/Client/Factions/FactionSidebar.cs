@@ -423,7 +423,7 @@ namespace Multiplayer.Client
         {
             if (gameScenarioBeforePages != null)
             {
-                // Lab switch (row 236 only): off = the scenario stays replaced, as before the fix. The xenotype part below is row 237 and stays on.
+                // Lab switch (row 236 only): off = the scenario stays replaced, as before the fix. The xenotype part below is row 237, switched by LabOff.Row(237).
                 if (!LabOff.Row(236))
                     Current.Game.Scenario = gameScenarioBeforePages;
                 gameScenarioBeforePages = null;
@@ -432,7 +432,8 @@ namespace Multiplayer.Client
             if (customXenotypesBeforePages != null)
             {
                 var list = Current.Game.customXenotypeDatabase?.customXenotypes;
-                if (list != null)
+                // Lab switch (row 237 only): off = the custom xenotype list stays as the pages left it, as before the fix.
+                if (list != null && !LabOff.Row(237))
                 {
                     list.Clear();
                     list.AddRange(customXenotypesBeforePages);
