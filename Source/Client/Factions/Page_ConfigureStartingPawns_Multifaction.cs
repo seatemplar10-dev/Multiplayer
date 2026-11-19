@@ -40,6 +40,20 @@ namespace Multiplayer.Client.Factions
         {
             if (_temporaryFactionForPawnCreation == null) return;
 
+            if (!LabOff.Row(427))
+            {
+                // FIXES row 427: the temporary faction was never in FactionManager; detach the page pawns still on it.
+                var pawns = Find.GameInitData?.startingAndOptionalPawns;
+                if (pawns != null)
+                    foreach (var pawn in pawns)
+                        if (pawn != null && pawn.Faction == _temporaryFactionForPawnCreation)
+                            pawn.SetFactionDirect(null);
+
+                Current.Game.InitData.playerFaction = null;
+                _temporaryFactionForPawnCreation = null;
+                return;
+            }
+
             Find.FactionManager.Remove(_temporaryFactionForPawnCreation);
             Find.FactionManager.toRemove.Remove(_temporaryFactionForPawnCreation);
 
@@ -49,6 +63,21 @@ namespace Multiplayer.Client.Factions
 
         private void GenerateTemporaryFaction()
         {
+            if (!LabOff.Row(427))
+            {
+                // FIXES row 427: detached faction (shape of FactionCreator.NewFactionWithIdeo), never added to FactionManager,
+                // so no client-only faction enters the sim and no relations are made with the real factions.
+                _temporaryFactionForPawnCreation = new Faction
+                {
+                    loadID = Find.UniqueIDsManager.GetNextFactionID(),
+                    def = _scenario.playerFaction.factionDef,
+                    temporary = true,
+                    hidden = true,
+                };
+                _temporaryFactionForPawnCreation.ideos = new FactionIdeosTracker(_temporaryFactionForPawnCreation);
+                return;
+            }
+
             _temporaryFactionForPawnCreation = FactionGenerator.NewGeneratedFaction(new FactionGeneratorParms(_scenario.playerFaction.factionDef));
             _temporaryFactionForPawnCreation.temporary = true;
 
