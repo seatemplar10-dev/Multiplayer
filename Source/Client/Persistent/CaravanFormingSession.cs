@@ -63,6 +63,16 @@ namespace Multiplayer.Client
         // every PC (synced code), so one faction's click put its list into another player's open caravan window.
         private List<TransferableOneWay> BuildTransferables()
         {
+            if (LabOff.Row(273)) // pre-fix (3803e15^): CalculateAndRecacheTransferables, which also builds the window widgets
+            {
+                var oldDialog = new CaravanFormingProxy(sessionId, map, reform, null, mapAboutToBeRemoved, meetingSpot)
+                {
+                    autoSelectTravelSupplies = autoSelectTravelSupplies
+                };
+                oldDialog.CalculateAndRecacheTransferables();
+                return oldDialog.transferables;
+            }
+
             var dialog = new CaravanFormingProxy(sessionId, map, reform, null, mapAboutToBeRemoved, meetingSpot)
             {
                 autoSelectTravelSupplies = autoSelectTravelSupplies,
@@ -229,6 +239,7 @@ namespace Multiplayer.Client
         public Transferable GetTransferableByThingId(int thingId)
         {
             // FIXES row 273 (v2): a thing that left the game loads back as null in an old session's list
+            if (LabOff.Row(273)) return transferables.Find(tr => tr.things.Any(t => t.thingIDNumber == thingId)); // pre-fix: not null-safe
             return transferables.Find(tr => tr?.things != null && tr.things.Any(t => t != null && t.thingIDNumber == thingId));
         }
 

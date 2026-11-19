@@ -190,7 +190,8 @@ namespace Multiplayer.Client.Persistent
         {
             var comp = map.MpComp();
             // FIXES row 273 (v2): this faction's session already on the map = re-list the map (see RefreshTransferables)
-            var existing = comp.GetCaravanFormingSession(faction);
+            var off273 = LabOff.Row(273); // pre-fix: no re-list of an existing session, no early return on a null session
+            var existing = off273 ? null : comp.GetCaravanFormingSession(faction);
             if (existing != null)
             {
                 // The click decides the mode (form on a home map, reform elsewhere) and the hitching spot, as in vanilla
@@ -200,7 +201,7 @@ namespace Multiplayer.Client.Persistent
                 existing.RefreshTransferables();
             }
             var session = existing ?? comp.CreateCaravanFormingSession(faction, reform, null, false, designatedMeetingPoint);
-            if (session == null)
+            if (session == null && !off273)
                 return;
 
             if (TickPatch.currentExecutingCmdIssuedBySelf)
