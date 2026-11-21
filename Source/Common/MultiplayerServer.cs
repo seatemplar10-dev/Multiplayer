@@ -42,6 +42,10 @@ namespace Multiplayer.Common
         public List<INetManager> netManagers = [];
         public IEnumerable<ServerPlayer> JoinedPlayers => playerManager.JoinedPlayers;
         public IEnumerable<ServerPlayer> PlayingPlayers => playerManager.PlayingPlayers;
+        // FIXES row 438: set by the Client (LabOff.Row(438)) when -mplaboff=438 asks for the old behaviour (no hold for a joining/rejoining player)
+        public static bool rejoinHoldOff;
+        // In-game players other than the host and the arbiter that are still catching up after a join/rejoin (status Simulating until Client_WorldReady). A disconnected player leaves PlayingPlayers, so a quitter holds nothing.
+        public IEnumerable<ServerPlayer> SimulatingJoiners => playerManager.PlayingPlayers.Where(p => p.status == PlayerStatus.Simulating && !p.IsHost && !p.IsArbiter);
         public IEnumerable<ServerPlayer> PlayingIngamePlayers => playerManager.PlayingPlayers.Where(p => p.status == PlayerStatus.Playing);
 
         public string? hostUsername;
@@ -121,13 +125,17 @@ namespace Multiplayer.Common
                     {
                         playersBehind.Clear();
                         playersBehind.AddRange(PlayingIngamePlayers.Where(p => p.ExtrapolatedTicksBehind > 90));
+                        var joinersHold = rejoinHoldOff ? null : SimulatingJoiners.ToList();
+                        var holdJoiners = joinersHold != null && joinersHold.Count > 0;
                         if (!freezeManager.Frozen &&
                             PlayingPlayers.Any(p => p.ExtrapolatedTicksBehind < 40) &&
-                            !playersBehind.Any())
+                            !playersBehind.Any() && !holdJoiners)
                         {
                             gameTimer++;
                             sentCmdsSnapshot = commands.SentCmds;
                         }
+                        else if (holdJoiners)
+                            ServerLog.Log($"Simulation paused because some players are still loading or catching up: {joinersHold.Join(p => p.Username)}");
                         else if (playersBehind.Any())
                         {
                             var text = playersBehind.Join(p => $"{p.Username}");

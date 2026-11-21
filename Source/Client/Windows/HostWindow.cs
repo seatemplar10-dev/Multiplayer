@@ -483,6 +483,7 @@ namespace Multiplayer.Client
         static bool TryStartLocalServer(ServerSettings settings)
         {
             var localServer = new MultiplayerServer(settings);
+            MultiplayerServer.rejoinHoldOff = LabOff.Row(438); // FIXES row 438
             var success = true;
 
             if (settings.direct) {
