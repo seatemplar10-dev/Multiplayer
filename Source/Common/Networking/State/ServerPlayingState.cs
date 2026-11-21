@@ -17,6 +17,8 @@ namespace Multiplayer.Common
         {
             connection.ChangeState(ConnectionStateEnum.ServerLoading);
             Player.ResetTimeVotes();
+            // FIXES row 438: a rejoin (Try resync) keeps Playing/Desynced otherwise; Simulating makes the hold count it until Client_WorldReady
+            if (!MultiplayerServer.rejoinHoldOff && !Player.IsHost && !Player.IsArbiter) Player.UpdateStatus(PlayerStatus.Simulating);
         }
 
         [TypedPacketHandler]
