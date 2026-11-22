@@ -206,6 +206,7 @@ namespace Multiplayer.Client
                 var response = header + (info?.GetFormattedStackTracesForRange(packet.diffAt) ??
                     $"Traces not available: no opinion with start tick {packet.tick} among the {known.Count} kept here" +
                     (known.Count > 0 ? $" (start ticks {known[0].startTick}..{known[known.Count - 1].startTick})" : ""));
+                DesyncCollector.RememberSent(packet.tick, packet.playerId, response); // FIXES row 447
                 Log.Message($"Multiplayer: desync trace request for opinion tick {packet.tick} (trace {packet.diffAt}, " +
                             $"player {packet.playerId}): " +
                             (info != null ? $"sending {info.desyncStackTraces.Count} traces" : "not available"));
@@ -229,6 +230,10 @@ namespace Multiplayer.Client
                 window?.HandleHostDesyncInfo(hostInfo);
             }
         }
+
+        // FIXES row 447: the desynced client's own traces; the host writes Desync-host-<tick>.zip from them
+        [TypedPacketHandler]
+        public void HandleDesyncTraces(ServerDesyncTracesPacket packet) => DesyncCollector.OnClientTraces(packet);
 
         [TypedPacketHandler]
         public void HandleDebug(ServerDebugPacket _) => Rejoiner.DoRejoin();

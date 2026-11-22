@@ -30,6 +30,7 @@ public enum Packets : byte
     Client_Selected,
     Client_PingLocation,
     Client_Traces,
+    Client_DesyncTraces,
     Client_Autosaving,
     Client_RequestRejoin,
     Client_SetFaction,
@@ -62,6 +63,7 @@ public enum Packets : byte
     Server_Selected,
     Server_PingLocation,
     Server_Traces,
+    Server_DesyncTraces,
     Server_SetFaction,
     Server_RequestRejoin,
 

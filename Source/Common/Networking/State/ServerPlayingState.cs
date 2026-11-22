@@ -33,6 +33,21 @@ namespace Multiplayer.Common
             Server.GetPlayer(packet.playerId)?.SendPacket(ServerTracesPacket.Transfer(packet.rawTraces, packet.rawJittedMethods));
         }
 
+        // FIXES row 447: the desynced client's traces go to the host (the host player writes Desync-host-<tick>.zip)
+        [TypedPacketHandler]
+        public void HandleDesyncTraces(ClientDesyncTracesPacket packet)
+        {
+            if (Player.IsHost || Player.IsArbiter) return;
+            var host = Server.PlayingPlayers.FirstOrDefault(p => p.IsHost);
+            if (host == null || host == Player)
+            {
+                ServerLog.Log($"Desync traces from {Player.Username} (opinion tick {packet.tick}): no host to forward them to");
+                return;
+            }
+            ServerLog.Log($"Desync traces from {Player.Username} (opinion tick {packet.tick}, {packet.rawTraces?.Length ?? 0} B) forwarded to {host.Username}");
+            host.conn.SendFragmented(ServerDesyncTracesPacket.From(Player.id, Player.Username, packet).Serialize());
+        }
+
         [TypedPacketHandler]
         public void HandleClientCommand(ClientCommandPacket packet)
         {

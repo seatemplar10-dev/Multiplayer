@@ -55,7 +55,11 @@ namespace Multiplayer.Client
             GUI.BeginGroup(buttonsRect);
 
             float x = 0;
-            if (Widgets.ButtonText(new Rect(x, 0, 120, 35), "MpTryResync".Translate()) && !rejoining)
+            // FIXES row 447: no resync until the desync report is written (or 30 s), W446's continuation is the backup
+            var gate = ResyncGate.State(desyncInfo.Written, Time.realtimeSinceStartup - openedAt);
+            var resyncLabel = gate.Enabled ? "MpTryResync".Translate().ToString() : gate.Label;
+            var resyncClicked = Widgets.ButtonText(new Rect(x, 0, 120, 35), resyncLabel, active: gate.Enabled);
+            if (resyncClicked && gate.Enabled && !rejoining)
             {
                 rejoining = true;
                 desyncInfo.WriteWhenReady(() => hostInfo); // FIXES row 446
