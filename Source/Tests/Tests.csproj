@@ -24,6 +24,10 @@
     </ItemGroup>
 
     <ItemGroup>
+      <Compile Include="../Client/Desyncs/DesyncReportWriter.cs" Link="DesyncReportWriter.cs" />
+    </ItemGroup>
+
+    <ItemGroup>
       <ProjectReference Include="..\ChatCommandContracts\ChatCommandContracts.csproj" />
       <ProjectReference Include="..\Common\Common.csproj" />
       <ProjectReference Include="..\SourceGen\SourceGen.csproj" ReferenceOutputAssembly="true" />

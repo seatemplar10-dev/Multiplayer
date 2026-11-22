@@ -58,6 +58,7 @@ namespace Multiplayer.Client
             if (Widgets.ButtonText(new Rect(x, 0, 120, 35), "MpTryResync".Translate()) && !rejoining)
             {
                 rejoining = true;
+                desyncInfo.WriteWhenReady(() => hostInfo); // FIXES row 446
                 Log.Message("Multiplayer: requesting rejoin");
                 Rejoiner.DoRejoin();
             }
@@ -110,9 +111,17 @@ namespace Multiplayer.Client
             var shouldWrite = hostInfo != null || Time.realtimeSinceStartup - openedAt > maxWait;
             if (!infoWritten && shouldWrite && desyncInfo.ReadyToSave)
             {
-                desyncInfo.Save(hostInfo);
+                desyncInfo.TryWriteOnce(hostInfo);
                 infoWritten = true;
             }
+        }
+
+        // FIXES row 446: the window closing (Try resync, Quit, a newer desync clearing the window stack) must not lose
+        // the report; if it is not written yet, it is written when the two report tasks end
+        public override void PostClose()
+        {
+            if (!infoWritten)
+                desyncInfo.WriteWhenReady(() => hostInfo);
         }
     }
 
