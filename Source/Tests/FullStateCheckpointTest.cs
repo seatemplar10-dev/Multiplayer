@@ -80,7 +80,7 @@ public class FullStateCheckpointTest
     public void CarryTicks_CoversThreeLabCheckpoints()
     {
         Assert.That(FullStateCheckpoints.CarryTicks, Is.EqualTo(7500));
-        Assert.That(MpVersion.Protocol, Is.EqualTo(59));
+        Assert.That(MpVersion.Protocol, Is.EqualTo(61));
     }
 
     // Two PCs, the same walks, opinions finished every 30 MP ticks as ConstantTicker does, and only every 7th window compared

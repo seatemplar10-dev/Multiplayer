@@ -37,6 +37,14 @@ namespace Multiplayer.Client
         private readonly List<FullStateHash> recentFullState = [];
         private long fullStateCompared; // common checkpoints compared, shown in the "sync check passed" line
 
+        /// <summary>FIXES row 444 (W444C): colonist building list and reservation entries, with the list checkpoint.</summary>
+        public void TryAddDetailLists(Map map, int mapTick)
+        {
+            if (!ShouldCollect) return;
+            OpinionInBuilding.TryMarkSimulating();
+            ListCheckpoint.TakeDetails(OpinionInBuilding.GetMapData(map.uniqueID), map, mapTick);
+        }
+
         /// <summary>
         /// FIXES row 99, lab hook (null unless Sea's MP Lab harness sets it, -mplabfulllive): called once per full-state
         /// checkpoint both opinions of a compared pair carry, with (MP timer, local hash, remote hash, the pair's desync message

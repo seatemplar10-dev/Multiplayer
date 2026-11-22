@@ -158,6 +158,8 @@ namespace Multiplayer.Client
                         tickListNormal, tickListRare, tickListLong);
                 if (ListOrderHash.IsCheckpoint(mapTicks) && !LabOff.Row(444))
                     Multiplayer.game.sync.TryAddZoneOrder(map, mapTicks); // FIXES row 444
+                if (ListOrderHash.IsCheckpoint(mapTicks) && !LabOff.Row(444))
+                    Multiplayer.game.sync.TryAddDetailLists(map, mapTicks); // W444C
 
                 eventCount++;
                 tickingMap = null;

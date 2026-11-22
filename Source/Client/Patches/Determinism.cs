@@ -177,7 +177,9 @@ namespace Multiplayer.Client.Patches
                 if (!found && inst.operand as FieldInfo == cellsShuffledField)
                 {
                     yield return new CodeInstruction(OpCodes.Call, AccessTools.Method(typeof(CellsShufflePatchShared), nameof(ShouldShuffle)));
-                    yield return new CodeInstruction(OpCodes.Not);
+                    // W444C: Not is bitwise (always non-zero with Or); -mplaboff=444 keeps that shipped IL
+                    foreach (var op in global::Multiplayer.Common.ShuffleIl.NegateOps(LabOff.Row(444)))
+                        yield return new CodeInstruction(op);
                     yield return new CodeInstruction(OpCodes.Or);
                     found = true;
                 }

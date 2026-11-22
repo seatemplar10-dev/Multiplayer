@@ -19,7 +19,9 @@ public enum SyncedList : byte
     TickNormal = 1, // AsyncTimeComp.tickListNormal
     TickRare = 2, // AsyncTimeComp.tickListRare
     TickLong = 3, // AsyncTimeComp.tickListLong
-    ZoneOrder = 4 // FIXES row 444: one entry per zone (faction, zone id, cells in list order); see ZoneOrderHash
+    ZoneOrder = 4, // FIXES row 444: one entry per zone (faction, zone id, cells in list order); see ZoneOrderHash
+    ColonistBuildings = 5, // FIXES row 444: allBuildingsColonist chunks; see DetailListHash
+    Reservations = 6 // FIXES row 444: one entry per claimant; see DetailListHash
 }
 
 /// <summary>One list at one checkpoint: how many entries were hashed, their order and their content.</summary>
@@ -198,7 +200,7 @@ public static class ListOrderHash
         SyncedList.TickNormal => "tickListNormal",
         SyncedList.TickRare => "tickListRare",
         SyncedList.TickLong => "tickListLong",
-        SyncedList.ZoneOrder => "zone cell order",
+        SyncedList.ZoneOrder => "zone cell order", SyncedList.ColonistBuildings => "colonist building list", SyncedList.Reservations => "reservations",
         _ => $"list {(byte)list}"
     };
 

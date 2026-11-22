@@ -50,6 +50,47 @@ namespace Multiplayer.Client.Desyncs
             }
         }
 
+        /// <summary>FIXES row 444 (W444C): ColonistBuildings entries (header + chunks) and one Reservations entry per claimant.</summary>
+        public static void TakeDetails(MapRandomStateData data, Map map, int mapTick)
+        {
+            var hashes = data.listHashes ??= new List<ListHash>(4);
+
+            var lb = map.listerBuildings;
+            var bKeys = data.buildingKeys ??= new List<string>();
+            var col = lb.allBuildingsColonist;
+            hashes.Add(DetailListHash.BuildingHeader(mapTick, col.Count, lb.allBuildingsNonColonist.Count));
+            bKeys.Add($"counts: {col.Count} colonist, {lb.allBuildingsNonColonist.Count} non-colonist buildings");
+            for (int i = 0; i < col.Count; i += DetailListHash.BuildingChunk)
+            {
+                hashes.Add(DetailListHash.BuildingChunkHash(mapTick, col, i, IdOf2));
+                var b = col[i];
+                bKeys.Add($"index {i}..{Math.Min(col.Count, i + DetailListHash.BuildingChunk) - 1}, first building id {b.thingIDNumber} " +
+                          $"{b.def?.defName} faction {b.Faction?.loadID.ToString() ?? "none"}");
+            }
+
+            var rKeys = data.reservationKeys ??= new List<string>();
+            var res = map.reservationManager?.ReservationsReadOnly;
+            if (res == null || res.Count == 0) return;
+            var byClaimant = new SortedDictionary<int, (Verse.Pawn pawn, List<DetailListHash.Res> rows)>();
+            foreach (var r in res)
+            {
+                var c = r.Claimant;
+                if (c == null) continue;
+                if (!byClaimant.TryGetValue(c.thingIDNumber, out var e))
+                    byClaimant[c.thingIDNumber] = e = (c, new List<DetailListHash.Res>());
+                var t = r.Target;
+                int tk = t.HasThing ? t.Thing.thingIDNumber : unchecked(ZoneOrderHash.CellId(t.Cell.x, t.Cell.y, t.Cell.z) | 0x40000000);
+                e.rows.Add(new DetailListHash.Res(tk, r.Job?.loadID ?? -1));
+            }
+            foreach (var kv in byClaimant)
+            {
+                hashes.Add(DetailListHash.OfClaimant(mapTick, kv.Key, kv.Value.rows));
+                rKeys.Add($"claimant {kv.Key} ({kv.Value.pawn.LabelShortCap}, faction {kv.Value.pawn.Faction?.loadID.ToString() ?? "none"}), {kv.Value.rows.Count} reservations");
+            }
+        }
+
+        private static readonly Func<Building, int> IdOf2 = b => b.thingIDNumber;
+
         // TickList's lists are private in the game; Assembly-CSharp is publicized for this assembly
         private static ListHash OfTickList(SyncedList list, int mapTick, TickList tickList) =>
             ListOrderHash.OfTickList(list, mapTick, tickList.thingLists, tickList.thingsToRegister,

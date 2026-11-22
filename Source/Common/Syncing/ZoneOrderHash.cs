@@ -71,3 +71,16 @@ public static class ZoneOrderHash
         }
     }
 }
+
+/// <summary>
+/// FIXES row 444 (W444C): the IL the Zone.Cells / Plan.Cells transpiler puts after the cellsShuffled load. The stack is
+/// (cellsShuffled, ShouldShuffle()) and `or` follows; a non-zero result skips the shuffle. The shipped IL used `not`,
+/// which is bitwise: cellsShuffled | ~x is never zero, so the shuffle never ran, in single player either.
+/// The fix is a logical not (ldc.i4.0; ceq): skip = cellsShuffled | (ShouldShuffle == 0).
+/// </summary>
+public static class ShuffleIl
+{
+    public static System.Reflection.Emit.OpCode[] NegateOps(bool oldShippedIl) => oldShippedIl
+        ? new[] { System.Reflection.Emit.OpCodes.Not }
+        : new[] { System.Reflection.Emit.OpCodes.Ldc_I4_0, System.Reflection.Emit.OpCodes.Ceq };
+}

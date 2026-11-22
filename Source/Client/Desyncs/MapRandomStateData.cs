@@ -18,5 +18,8 @@ namespace Multiplayer.Client
         // FIXES row 444: local text ("faction F zone Z") of each ListHash entry with list == ZoneOrder, in the same order.
         // Not sent: names a split on the side that built it.
         public List<string> zoneKeys;
+        // W444C: same for ColonistBuildings and Reservations entries
+        public List<string> buildingKeys;
+        public List<string> reservationKeys;
     }
 }

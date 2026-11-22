@@ -9,7 +9,7 @@ namespace Multiplayer.Common
         // 57: ClientInitDataPacket.ModData.configs is a list (was one optional config)
         // 58: sync opinions carry list order/content checkpoints per map (MapRandomState.listHashes, FIXES row 113)
         // 59: sync opinions carry the lab harness's full-state checkpoints (SyncOpinion.fullStateHashes, FIXES row 99)
-        public const int Protocol = 60; // 60: FIXES row 444 adds SyncedList.ZoneOrder entries to the list checkpoints (same bytes, more entries)
+        public const int Protocol = 61; // 61: W444C adds ColonistBuildings + Reservations list entries (same bytes, more entries). 60: FIXES row 444 adds SyncedList.ZoneOrder entries to the list checkpoints (same bytes, more entries)
 
         public static readonly string? GitHash = Assembly.GetExecutingAssembly()
             .GetCustomAttributes<AssemblyMetadataAttribute>()

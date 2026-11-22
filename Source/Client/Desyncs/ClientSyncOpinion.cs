@@ -73,6 +73,12 @@ namespace Multiplayer.Client
                 // FIXES row 444: a zone cell order split names the faction and the zone (keys exist on the local side only)
                 var zoneSplit = ZoneOrderHash.NameFirstDifference(g.map1.listHashes, g.map2.listHashes, g.map1.zoneKeys,
                     g.map2.zoneKeys, SideName, other.SideName);
+                var bSplit = DetailListHash.NameFirstDifference(SyncedList.ColonistBuildings, g.map1.listHashes, g.map2.listHashes,
+                    g.map1.buildingKeys, g.map2.buildingKeys, SideName, other.SideName);
+                if (bSplit != null) zoneSplit = zoneSplit == null ? bSplit : $"{zoneSplit}; {bSplit}";
+                var rSplit = DetailListHash.NameFirstDifference(SyncedList.Reservations, g.map1.listHashes, g.map2.listHashes,
+                    g.map1.reservationKeys, g.map2.reservationKeys, SideName, other.SideName);
+                if (rSplit != null) zoneSplit = zoneSplit == null ? rSplit : $"{zoneSplit}; {rSplit}";
                 if (zoneSplit != null)
                     listSplit = listSplit == null ? zoneSplit : $"{listSplit}; {zoneSplit}";
 
