@@ -37,14 +37,26 @@ public class SaveableDesyncInfo(
 
     public bool ReadyToSave => metadata.IsCompleted && replay.IsCompleted;
 
-    public void Save([CanBeNull] HostInfo hostInfo)
+    // FIXES row 446: the report is written once, by the window or (if the window is gone first) when the tasks end
+    private DesyncReportWriter<HostInfo> writer;
+    private DesyncReportWriter<HostInfo> Writer => writer ??= new DesyncReportWriter<HostInfo>(
+        Task.WhenAll(metadata, replay), Save, OnMainThread.Enqueue, text => Log.Message(text));
+
+    public bool Written => Writer.Written;
+    public bool TryWriteOnce([CanBeNull] HostInfo hostInfo) => Writer.TryWrite(hostInfo, false);
+    public void WriteWhenReady(Func<HostInfo> hostNow) => Writer.WriteWhenReady(hostNow);
+
+    public string Save([CanBeNull] HostInfo hostInfo)
     {
         var watch = Stopwatch.StartNew();
+        string savedPath = null;
 
         try
         {
             var desyncFilePath = FindFileNameForNextDesyncFile();
-            using var zip = MpZipFile.Open(Path.Combine(Multiplayer.DesyncsDir, desyncFilePath + ".zip"), ZipArchiveMode.Create);
+            var zipPath = Path.Combine(Multiplayer.DesyncsDir, desyncFilePath + ".zip");
+            using var zip = MpZipFile.Open(zipPath, ZipArchiveMode.Create);
+            savedPath = zipPath;
 
             zip.AddEntry("desync_info", GetDesyncDetails());
 
@@ -82,6 +94,7 @@ public class SaveableDesyncInfo(
         }
 
         Log.Message($"Desync info writing took {watch.ElapsedMilliseconds}");
+        return savedPath;
     }
 
     private string GetLocalTraces()
