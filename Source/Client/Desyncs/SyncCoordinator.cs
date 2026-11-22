@@ -291,6 +291,18 @@ namespace Multiplayer.Client
         }
 
         /// <summary>
+        /// FIXES row 444: one ZoneOrder entry per zone of every faction's zone manager on the map (zones sorted by ID),
+        /// hashing the raw cells list in list order. Called with the list checkpoint, so every 60 map ticks only.
+        /// </summary>
+        public void TryAddZoneOrder(Map map, int mapTick)
+        {
+            if (!ShouldCollect) return;
+            OpinionInBuilding.TryMarkSimulating();
+            var data = OpinionInBuilding.GetMapData(map.uniqueID);
+            ListCheckpoint.TakeZones(data, map, mapTick);
+        }
+
+        /// <summary>
         /// FIXES row 99 (live full-state checksum): the lab harness (MPLabFullState, -mplabfulllive) calls this from TickPatch.DoTick's
         /// postfix with the root hash of its full-state walk at MP timer <paramref name="timer"/>. The checkpoint rides in every
         /// opinion finished in the next <see cref="FullStateCheckpoints.CarryTicks"/> MP ticks.

@@ -27,6 +27,29 @@ namespace Multiplayer.Client.Desyncs
             into.Add(OfTickList(SyncedList.TickLong, mapTick, longList));
         }
 
+        /// <summary>FIXES row 444: appends one ZoneOrder entry per zone (faction id, then zone ID), raw cells list in list order.</summary>
+        public static void TakeZones(MapRandomStateData data, Map map, int mapTick)
+        {
+            var comp = map.MpComp();
+            if (comp?.factionData == null) return;
+            var hashes = data.listHashes ??= new List<ListHash>(4);
+            var keys = data.zoneKeys ??= new List<string>();
+            var zones = new List<Zone>();
+            foreach (var kv in comp.factionData) // SortedDictionary: faction loadID order
+            {
+                var all = kv.Value.zoneManager?.AllZones;
+                if (all == null) continue;
+                zones.Clear();
+                zones.AddRange(all);
+                zones.Sort((p, q) => p.ID.CompareTo(q.ID));
+                foreach (var z in zones)
+                {
+                    hashes.Add(ZoneOrderHash.OfZone(mapTick, kv.Key, z.ID, z.cells, c => ZoneOrderHash.CellId(c.x, c.y, c.z)));
+                    keys.Add($"faction {kv.Key} zone {z.ID} ({z.label})");
+                }
+            }
+        }
+
         // TickList's lists are private in the game; Assembly-CSharp is publicized for this assembly
         private static ListHash OfTickList(SyncedList list, int mapTick, TickList tickList) =>
             ListOrderHash.OfTickList(list, mapTick, tickList.thingLists, tickList.thingsToRegister,

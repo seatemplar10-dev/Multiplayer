@@ -70,6 +70,11 @@ namespace Multiplayer.Client
                 // the random states still match is named by itself; with a random state difference it is added to that
                 var listSplit = ListOrderHash.FirstDifference(g.map1.listHashes, g.map2.listHashes, SideName,
                     other.SideName);
+                // FIXES row 444: a zone cell order split names the faction and the zone (keys exist on the local side only)
+                var zoneSplit = ZoneOrderHash.NameFirstDifference(g.map1.listHashes, g.map2.listHashes, g.map1.zoneKeys,
+                    g.map2.zoneKeys, SideName, other.SideName);
+                if (zoneSplit != null)
+                    listSplit = listSplit == null ? zoneSplit : $"{listSplit}; {zoneSplit}";
 
                 if (!g.map1.randomStates.SequenceEqual(g.map2.randomStates))
                     return $"Wrong random state on map {g.map1.mapId}" +

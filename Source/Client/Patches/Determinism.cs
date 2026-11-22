@@ -186,7 +186,8 @@ namespace Multiplayer.Client.Patches
 
         public static bool ShouldShuffle()
         {
-            return Multiplayer.Client == null || Multiplayer.Ticking;
+            // FIXES row 444 (W444B): in MP no zone / plan cell shuffle on any PC (row 444 off = old rule: shuffle while ticking)
+            return global::Multiplayer.Common.ZoneOrderHash.ShouldShuffle(Multiplayer.Client != null, Multiplayer.Ticking, LabOff.Row(444));
         }
     }
 

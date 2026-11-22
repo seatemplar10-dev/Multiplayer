@@ -156,6 +156,8 @@ namespace Multiplayer.Client
                 if (ListOrderHash.IsCheckpoint(mapTicks))
                     Multiplayer.game.sync.TryAddListCheckpoint(map.uniqueID, mapTicks, map.listerThings.AllThings,
                         tickListNormal, tickListRare, tickListLong);
+                if (ListOrderHash.IsCheckpoint(mapTicks) && !LabOff.Row(444))
+                    Multiplayer.game.sync.TryAddZoneOrder(map, mapTicks); // FIXES row 444
 
                 eventCount++;
                 tickingMap = null;

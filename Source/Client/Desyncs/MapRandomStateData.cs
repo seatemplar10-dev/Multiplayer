@@ -14,5 +14,9 @@ namespace Multiplayer.Client
         // FIXES row 113 item 3: list order/content checkpoints (ListOrderHash). Null until the window's first checkpoint,
         // so a window without one allocates nothing.
         public List<ListHash> listHashes;
+
+        // FIXES row 444: local text ("faction F zone Z") of each ListHash entry with list == ZoneOrder, in the same order.
+        // Not sent: names a split on the side that built it.
+        public List<string> zoneKeys;
     }
 }

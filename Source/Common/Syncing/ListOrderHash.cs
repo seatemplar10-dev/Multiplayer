@@ -18,7 +18,8 @@ public enum SyncedList : byte
     AllThings = 0, // map.listerThings.AllThings
     TickNormal = 1, // AsyncTimeComp.tickListNormal
     TickRare = 2, // AsyncTimeComp.tickListRare
-    TickLong = 3 // AsyncTimeComp.tickListLong
+    TickLong = 3, // AsyncTimeComp.tickListLong
+    ZoneOrder = 4 // FIXES row 444: one entry per zone (faction, zone id, cells in list order); see ZoneOrderHash
 }
 
 /// <summary>One list at one checkpoint: how many entries were hashed, their order and their content.</summary>
@@ -197,6 +198,7 @@ public static class ListOrderHash
         SyncedList.TickNormal => "tickListNormal",
         SyncedList.TickRare => "tickListRare",
         SyncedList.TickLong => "tickListLong",
+        SyncedList.ZoneOrder => "zone cell order",
         _ => $"list {(byte)list}"
     };
 
