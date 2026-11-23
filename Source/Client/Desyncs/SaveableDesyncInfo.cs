@@ -44,7 +44,18 @@ public class SaveableDesyncInfo(
 
     public bool Written => Writer.Written;
     public bool TryWriteOnce([CanBeNull] HostInfo hostInfo) => Writer.TryWrite(hostInfo, false);
-    public void WriteWhenReady(Func<HostInfo> hostNow) => Writer.WriteWhenReady(hostNow);
+
+    // FIXES row 446 (c): the late write runs after Rejoiner.DoRejoin dropped the game, so GetDesyncDetails threw
+    // (Multiplayer.GameComp NRE) and left an empty zip (lab 446f5_1123). Take the game-state lines when the write is
+    // armed: DoRejoin, ClearWindowStack and PostClose arm it while the game still exists.
+    private string details;
+
+    public void WriteWhenReady(Func<HostInfo> hostNow)
+    {
+        try { details ??= GetDesyncDetails(); }
+        catch (Exception e) { Log.Warning($"Multiplayer: desync details not taken at arm time: {e.Message}"); }
+        Writer.WriteWhenReady(hostNow);
+    }
 
     public string Save([CanBeNull] HostInfo hostInfo)
     {
@@ -58,7 +69,7 @@ public class SaveableDesyncInfo(
             using var zip = MpZipFile.Open(zipPath, ZipArchiveMode.Create);
             savedPath = zipPath;
 
-            zip.AddEntry("desync_info", GetDesyncDetails());
+            zip.AddEntry("desync_info", details ?? GetDesyncDetails());
 
             zip.AddEntry("local_traces.txt", GetLocalTraces());
             zip.AddEntry("host_traces.txt", hostInfo?.Traces ?? "No host traces");
@@ -129,7 +140,7 @@ public class SaveableDesyncInfo(
 
         desyncInfo
             .AppendLine("###Tick Data###")
-            .AppendLine($"Arbiter Connected And Playing|||{Multiplayer.session.ArbiterPlaying}")
+            .AppendLine($"Arbiter Connected And Playing|||{Multiplayer.session?.ArbiterPlaying.ToStringSafe() ?? "no session"}")
             .AppendLine($"Last Valid Tick - Local|||{coordinator.lastValidTick}")
             .AppendLine($"Last Valid Tick - Arbiter|||{coordinator.arbiterWasPlayingOnLastValidTick}")
             .AppendLine("\n###Version Data###")
@@ -137,7 +148,7 @@ public class SaveableDesyncInfo(
             .AppendLine($"Rimworld Version and Rev|||{VersionControl.CurrentVersionStringWithRev}")
             .AppendLine("\n###Debug Options###")
             .AppendLine($"Multiplayer Debug Build - Client|||{MpVersion.IsDebug}")
-            .AppendLine($"Multiplayer Debug Mode - Host|||{Multiplayer.GameComp.debugMode}")
+            .AppendLine($"Multiplayer Debug Mode - Host|||{Multiplayer.game?.gameComp?.debugMode.ToStringSafe() ?? "no game"}")
             .AppendLine($"Rimworld Developer Mode - Client|||{Prefs.DevMode}")
             .AppendLine($"Desync Tracing Mode - Client|||{Multiplayer.settings.desyncTracingMode}{(DeferredStackTracing.HashManagedFrames ? " +frame hash" : "")}")
             .AppendLine($"Fast Trace Cache - Client|||{(FastManagedTrace.Supported ? FastManagedTrace.Stats : "unwinder not supported here")}")
@@ -145,10 +156,10 @@ public class SaveableDesyncInfo(
             .AppendLine($"Trace Warning|||{traceWarning ?? "none"}")
             .AppendLine($"Thing Lists In Zip|||{(thingLists.Count > 0 ? string.Join(", ", thingLists.Select(t => $"local_things_map{t.mapId}.txt")) : "none (no map with different things)")}")
             .AppendLine("\n###Server Info###")
-            .AppendLine($"Player Count|||{Multiplayer.session.players.Count}")
-            .AppendLine($"Async time active|||{Multiplayer.GameComp.asyncTime}")
-            .AppendLine($"Multifaction active|||{Multiplayer.GameComp.multifaction}")
-            .AppendLine($"Map Count|||{Find.Maps?.Count.ToStringSafe()}")
+            .AppendLine($"Player Count|||{Multiplayer.session?.players?.Count.ToStringSafe() ?? "no session"}")
+            .AppendLine($"Async time active|||{Multiplayer.game?.gameComp?.asyncTime.ToStringSafe() ?? "no game"}")
+            .AppendLine($"Multifaction active|||{Multiplayer.game?.gameComp?.multifaction.ToStringSafe() ?? "no game"}")
+            .AppendLine($"Map Count|||{Current.Game?.Maps?.Count.ToStringSafe() ?? "no game"}")
             .AppendLine("\n###CPU Info###")
             .AppendLine($"Processor Name|||{SystemInfo.processorType}")
             .AppendLine($"Processor Speed (MHz)|||{SystemInfo.processorFrequency}")
