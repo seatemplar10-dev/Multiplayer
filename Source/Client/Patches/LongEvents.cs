@@ -40,11 +40,16 @@ namespace Multiplayer.Client.Patches
         public static bool currentEventWasMarked;
         // row 453 (25 Nov): the text key of the running event, still known after vanilla nulls currentEvent (LongEventEnd needs it).
         public static string currentEventKey;
+        // row 453 (25 Nov, Fable review): true for Multiplayer's own events (Mp*, Saving), so LongEventEnd can skip them without string work.
+        public static bool keyIsMpOrSaving;
 
         static void Prefix(ref bool __state)
         {
             __state = LongEventHandler.currentEvent == null;
             currentEventKey = LongEventHandler.currentEvent?.eventTextKey;
+            // row 453 (25 Nov, Fable review): computed here because vanilla nulls currentEvent before the end queue runs.
+            keyIsMpOrSaving = currentEventKey != null
+                && (currentEventKey.StartsWith("Mp", StringComparison.Ordinal) || currentEventKey == "Saving");
             currentEventWasMarked = MarkLongEvents.IsTickMarked(LongEventHandler.currentEvent?.eventAction);
         }
 
@@ -81,22 +86,20 @@ namespace Multiplayer.Client.Patches
         // inside a tick-marked event (e.g. VEF map spawns after a grav ship landing) saw InInterface == true and got per-PC ids.
         public static bool runningMarkedQueue;
 
-        // row 453 (25 Nov): treat the queue of a marked event as simulation, except Multiplayer's own events (Mp*, Saving).
-        static void Prefix(ref bool __state)
+        // row 453 (25 Nov, Fable review): save/restore instead of set/clear, so a nested call cannot clear the outer flag; main thread,
+        // currentEvent == null (the queue really runs now) and not an Mp/Saving event; lab switch -mplaboff=453 restores the old behaviour.
+        static void Prefix(out bool __state)
         {
-            if (Multiplayer.Client != null && NewLongEvent.currentEventWasMarked
-                && !(NewLongEvent.currentEventKey ?? "").StartsWith("Mp", StringComparison.Ordinal)
-                && NewLongEvent.currentEventKey != "Saving")
-            {
+            __state = runningMarkedQueue;
+            if (Multiplayer.Client != null && NewLongEvent.currentEventWasMarked && UnityData.IsInMainThread
+                && LongEventHandler.currentEvent == null && !NewLongEvent.keyIsMpOrSaving && !LabOff.Row(453))
                 runningMarkedQueue = true;
-                __state = true;
-            }
         }
 
-        // row 453 (25 Nov): always clear the flag, even if a queued action throws.
+        // row 453 (25 Nov, Fable review): void finalizer restores the outer value even if a queued action throws, and does not swallow the exception.
         static void Finalizer(bool __state)
         {
-            if (__state) runningMarkedQueue = false;
+            runningMarkedQueue = __state;
         }
 
         static void Postfix()
