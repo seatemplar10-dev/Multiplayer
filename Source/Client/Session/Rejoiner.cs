@@ -26,6 +26,8 @@ public static class Rejoiner
 
     public static void DoRejoin()
     {
+        DesyncedWindow.WriteOpenReports(); // FIXES row 446: a rejoin without the Try resync button must still write the report
+
         // 1.7 lab, FIXES row 118: the rejoin load (a multifaction snapshot) has no current map; Loader.PostLoad gives this view back
         AsyncTime.WorldCurrentMapPin.RememberViewForReload();
 

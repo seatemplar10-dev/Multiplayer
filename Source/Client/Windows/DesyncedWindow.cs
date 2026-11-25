@@ -62,7 +62,7 @@ namespace Multiplayer.Client
             if (resyncClicked && gate.Enabled && !rejoining)
             {
                 rejoining = true;
-                desyncInfo.WriteWhenReady(() => hostInfo); // FIXES row 446
+                if (!LabOff.Row(446)) desyncInfo.WriteWhenReady(() => hostInfo); // FIXES row 446
                 Log.Message("Multiplayer: requesting rejoin");
                 Rejoiner.DoRejoin();
             }
@@ -124,8 +124,18 @@ namespace Multiplayer.Client
         // the report; if it is not written yet, it is written when the two report tasks end
         public override void PostClose()
         {
-            if (!infoWritten)
+            if (!infoWritten && !LabOff.Row(446))
                 desyncInfo.WriteWhenReady(() => hostInfo);
+        }
+
+        // FIXES row 446: Rejoiner.DoRejoin and MpUI.ClearWindowStack drop windows without PostClose; arm every open
+        // DesyncedWindow first (WriteWhenReady is idempotent). -mplaboff=446 skips it (old behaviour).
+        public static void WriteOpenReports()
+        {
+            if (LabOff.Row(446) || Find.WindowStack == null) return;
+            foreach (var w in Find.WindowStack.windows.ToArray())
+                if (w is DesyncedWindow dw && !dw.infoWritten)
+                    dw.desyncInfo.WriteWhenReady(() => dw.hostInfo);
         }
     }
 

@@ -137,6 +137,7 @@ namespace Multiplayer.Client.Util
 
         public static void ClearWindowStack()
         {
+            DesyncedWindow.WriteOpenReports(); // FIXES row 446
             Find.WindowStack.windows.Clear();
         }
 

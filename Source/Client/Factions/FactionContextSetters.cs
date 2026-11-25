@@ -11,17 +11,22 @@ namespace Multiplayer.Client.Factions;
 // together with ofPlayer, as FactionExtensions.PushFaction does. The bare FactionContext.Push changed only ofPlayer, so on a PC of
 // another faction Find.StoryWatcher stayed that PC's own and Pawn.SpawnSetup raised the wrong faction's greatestPopulation.
 // -mplaboff=418 restores the bare push (lab control arm).
+// FIXES row 450: in single player (Multiplayer.game == null) PushFaction/PopFaction read Multiplayer.WorldComp, whose getter
+// (game.worldComp) throws NullReferenceException; there is no world comp to swap, so the bare FactionContext push/pop (the pre-row-418
+// behaviour) is used. -mplaboff=450 restores the crash (lab control arm).
 static class CaravanFactionScope
 {
+    static bool NoMpGame() => Multiplayer.game == null && !LabOff.Row(450);
+
     public static void Push(Faction faction)
     {
-        if (!LabOff.Row(418)) FactionExtensions.PushFaction(null, faction);
+        if (!LabOff.Row(418) && !NoMpGame()) FactionExtensions.PushFaction(null, faction);
         else FactionContext.Push(faction);
     }
 
     public static void Pop()
     {
-        if (!LabOff.Row(418)) FactionExtensions.PopFaction();
+        if (!LabOff.Row(418) && !NoMpGame()) FactionExtensions.PopFaction();
         else FactionContext.Pop();
     }
 }
