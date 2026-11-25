@@ -38,10 +38,13 @@ namespace Multiplayer.Client.Patches
     static class NewLongEvent
     {
         public static bool currentEventWasMarked;
+        // row 453 (25 Nov): the text key of the running event, still known after vanilla nulls currentEvent (LongEventEnd needs it).
+        public static string currentEventKey;
 
         static void Prefix(ref bool __state)
         {
             __state = LongEventHandler.currentEvent == null;
+            currentEventKey = LongEventHandler.currentEvent?.eventTextKey;
             currentEventWasMarked = MarkLongEvents.IsTickMarked(LongEventHandler.currentEvent?.eventAction);
         }
 
@@ -72,8 +75,30 @@ namespace Multiplayer.Client.Patches
     }
 
     [HarmonyPatch(typeof(LongEventHandler), nameof(LongEventHandler.ExecuteToExecuteWhenFinished))]
-    static class LongEventEnd
+    public static class LongEventEnd
     {
+        // row 453 (25 Nov): vanilla sets currentEvent = null before running ExecuteWhenFinished actions, so mods' actions queued
+        // inside a tick-marked event (e.g. VEF map spawns after a grav ship landing) saw InInterface == true and got per-PC ids.
+        public static bool runningMarkedQueue;
+
+        // row 453 (25 Nov): treat the queue of a marked event as simulation, except Multiplayer's own events (Mp*, Saving).
+        static void Prefix(ref bool __state)
+        {
+            if (Multiplayer.Client != null && NewLongEvent.currentEventWasMarked
+                && !(NewLongEvent.currentEventKey ?? "").StartsWith("Mp", StringComparison.Ordinal)
+                && NewLongEvent.currentEventKey != "Saving")
+            {
+                runningMarkedQueue = true;
+                __state = true;
+            }
+        }
+
+        // row 453 (25 Nov): always clear the flag, even if a queued action throws.
+        static void Finalizer(bool __state)
+        {
+            if (__state) runningMarkedQueue = false;
+        }
+
         static void Postfix()
         {
             if (Multiplayer.Client != null && NewLongEvent.currentEventWasMarked)

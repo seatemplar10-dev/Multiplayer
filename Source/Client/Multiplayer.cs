@@ -70,7 +70,9 @@ namespace Multiplayer.Client
             && !ExecutingCmds
             && !reloading
             && Current.ProgramState == ProgramState.Playing
-            && LongEventHandler.currentEvent == null;
+            && LongEventHandler.currentEvent == null
+            // row 453 (25 Nov): queued actions of a marked long event run as simulation (see LongEventEnd)
+            && !Patches.LongEventEnd.runningMarkedQueue;
 
         public static string ReplaysDir => GenFilePaths.FolderUnderSaveData("MpReplays");
         public static string DesyncsDir => GenFilePaths.FolderUnderSaveData("MpDesyncs");
