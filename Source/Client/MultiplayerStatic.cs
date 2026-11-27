@@ -78,6 +78,7 @@ namespace Multiplayer.Client
             Log.Message($"Arch: {RuntimeInformation.ProcessArchitecture}/OS: {RuntimeInformation.OSArchitecture}");
             Log.Message($"Player's username: {Multiplayer.username}");
             SettingsCheck.LogStart();
+            Patches.UniqueIdsPatch.LogStart();
 
             var persistentObj = new GameObject();
             persistentObj.AddComponent<OnMainThread>();

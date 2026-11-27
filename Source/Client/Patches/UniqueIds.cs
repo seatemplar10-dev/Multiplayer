@@ -2,6 +2,7 @@ using HarmonyLib;
 using RimWorld;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Threading;
 using Verse;
 
 namespace Multiplayer.Client.Patches
@@ -15,8 +16,21 @@ namespace Multiplayer.Client.Patches
 
         public static bool useLocalIdsOverride;
 
-        private static bool UseLocalIds =>
-            Multiplayer.Client != null && (useLocalIdsOverride || Multiplayer.InInterface || Current.ProgramState == ProgramState.Entry);
+        private static bool UseLocalIds => Multiplayer.Client != null && UseLocalIdsFor(
+            useLocalIdsOverride, Multiplayer.InInterface, Current.ProgramState == ProgramState.Entry, UnityData.IsInMainThread);
+
+        public static bool UseLocalIdsFor(bool overrideOn, bool inInterface, bool entry, bool mainThread) =>
+            global::Multiplayer.Client.Util.LocalIdRule.UseLocal(overrideOn, inInterface, entry, mainThread, !LabOff.Row(514));
+
+        private static bool startLogged;
+
+        // Once per process, at startup.
+        public static void LogStart()
+        {
+            if (startLogged || LabOff.Row(514)) return;
+            startLogged = true;
+            Log.Message("[Multiplayer] row 514: unique ids asked for off the main thread stay local");
+        }
 
         static bool Prefix()
         {
@@ -26,7 +40,7 @@ namespace Multiplayer.Client.Patches
         static void Postfix(ref int __result)
         {
             if (UseLocalIds)
-                __result = localIds--;
+                __result = Interlocked.Decrement(ref localIds) + 1;
         }
     }
 
