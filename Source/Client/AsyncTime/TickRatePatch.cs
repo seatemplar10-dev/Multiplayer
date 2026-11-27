@@ -4,6 +4,7 @@ using Verse;
 namespace Multiplayer.Client
 {
     [HarmonyPatch(typeof(TickManager), nameof(TickManager.TickRateMultiplier), MethodType.Getter)]
+    [HarmonyPriority(Priority.First)] // a false prefix stops the later ones, so MP's value wins over other mods (Smart Speed)
     public static class TickRatePatch
     {
         static bool Prefix(TickManager __instance, ref float __result)
