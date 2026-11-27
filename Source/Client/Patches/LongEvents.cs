@@ -227,6 +227,16 @@ namespace Multiplayer.Client.Patches
         static readonly AccessTools.FieldRef<Queue<LongEventHandler.QueuedLongEvent>> EventQueue =
             AccessTools.StaticFieldRefAccess<Queue<LongEventHandler.QueuedLongEvent>>(AccessTools.Field(typeof(LongEventHandler), "eventQueue"));
 
+        // row 456 1b-2 (review finding 2): the faction in force right now. FactionContext.Push/Set (used by CaravanFactionScope, the
+        // map tick and the command executor) writes FactionManager.ofPlayer, so that field is the top of the context stack, also under
+        // CaravanFactionScope(gravship.Faction) inside a world tick. Read the field, not a fallback to the spectator.
+        static Faction ActiveFaction()
+        {
+            if (Multiplayer.game == null) return null;
+            var fm = Find.FactionManager;
+            return fm.ofPlayer ?? fm.OfPlayer;
+        }
+
         static void Postfix()
         {
             var drawn = SeedLongEvents.lastDrawnSeed;
@@ -239,7 +249,7 @@ namespace Multiplayer.Client.Patches
             table.Add(queue.Last(), new Info
             {
                 seed = Gen.HashCombineInt(drawn.Value, 456),
-                faction = Multiplayer.game != null ? Find.FactionManager.OfPlayer : null
+                faction = ActiveFaction()
             });
         }
     }
