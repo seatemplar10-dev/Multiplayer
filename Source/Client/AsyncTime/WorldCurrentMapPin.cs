@@ -538,7 +538,7 @@ static class WorldCurrentMapPinLongEventPatch
                         return;
                     Multiplayer.WorldComp?.SetFaction(pushedF);
                     foreach (var map in Find.Maps)
-                        map.MpComp().SetFaction(pushedF);
+                        map.MpComp()?.SetFaction(pushedF);   // a map added before its MpComp exists (mapgen threw) is skipped
                 });
         }
     }
@@ -551,7 +551,8 @@ static class WorldCurrentMapPinLongEventPatch
             {
                 WorldCurrentMapPin.longEventBodyFactionPushed = false;
                 // never throws: the exception handler may have run StopMultiplayer (game null, stack cleared) before this
-                if (PinRule.CanPop(Multiplayer.game != null, FactionContext.stack.Count, Current.Game != null && Find.Maps != null))
+                // maps are guarded at the loop, not here, so a pop is never skipped while the game lives (Neon recheck 28 Nov)
+                if (PinRule.CanPop(Multiplayer.game != null, FactionContext.stack.Count, Current.Game != null))
                 {
                     var f = FactionExtensions.PopFaction();
                     // the body may have called ChangeRealPlayerFaction (FactionCreator): then that faction wins over the old one
@@ -563,8 +564,9 @@ static class WorldCurrentMapPinLongEventPatch
                             FactionContext.Set(target);
                             Multiplayer.WorldComp?.SetFaction(target);
                         }
-                        foreach (var map in Find.Maps)
-                            map.MpComp().SetFaction(target);
+                        if (Find.Maps != null)
+                            foreach (var map in Find.Maps)
+                                map.MpComp()?.SetFaction(target);
                     }
                 }
             }
