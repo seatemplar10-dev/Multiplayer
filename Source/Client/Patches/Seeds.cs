@@ -158,11 +158,16 @@ namespace Multiplayer.Client
     [HarmonyPatch(typeof(LongEventHandler), nameof(LongEventHandler.QueueLongEvent), typeof(Action), typeof(string), typeof(bool), typeof(Action<Exception>), typeof(bool), typeof(bool), typeof(Action))]
     static class SeedLongEvents
     {
+        // row 456 (27 Nov): the seed drawn below, handed to LongEventQueueInfo.Postfix (same call) so the event's ExecuteWhenFinished queue can be seeded from it
+        public static int? lastDrawnSeed;
+
         static void Prefix(ref Action action, ref Action callback)
         {
+            lastDrawnSeed = null;
             if (Multiplayer.Client != null && (Multiplayer.Ticking || Multiplayer.ExecutingCmds))
             {
                 var seed = Rand.Int;
+                lastDrawnSeed = seed;
                 action = (() => Rand.PushState(seed)) + action + Rand.PopState;
 
                 if (callback != null)

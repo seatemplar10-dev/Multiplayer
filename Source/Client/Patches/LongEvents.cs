@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
+using Multiplayer.Client.Factions;
+using RimWorld;
 using HarmonyLib;
 using Multiplayer.Common;
 using Multiplayer.Common.Networking.Packet;
@@ -42,11 +45,14 @@ namespace Multiplayer.Client.Patches
         public static string currentEventKey;
         // row 453 (25 Nov, Fable review): true for Multiplayer's own events (Mp*, Saving), so LongEventEnd can skip them without string work.
         public static bool keyIsMpOrSaving;
+        // row 456 (27 Nov): the running event itself (vanilla nulls currentEvent before the end queue runs); key into LongEventQueueInfo
+        public static LongEventHandler.QueuedLongEvent currentQueued;
 
         static void Prefix(ref bool __state)
         {
             __state = LongEventHandler.currentEvent == null;
             currentEventKey = LongEventHandler.currentEvent?.eventTextKey;
+            currentQueued = LongEventHandler.currentEvent;
             // row 453 (25 Nov, Fable review): computed here because vanilla nulls currentEvent before the end queue runs.
             keyIsMpOrSaving = currentEventKey != null
                 && (currentEventKey.StartsWith("Mp", StringComparison.Ordinal) || currentEventKey == "Saving");
@@ -56,6 +62,7 @@ namespace Multiplayer.Client.Patches
         static void Postfix(bool __state)
         {
             currentEventWasMarked = false;
+            currentQueued = null;
 
             if (Multiplayer.Client == null) return;
 
@@ -86,20 +93,62 @@ namespace Multiplayer.Client.Patches
         // inside a tick-marked event (e.g. VEF map spawns after a grav ship landing) saw InInterface == true and got per-PC ids.
         public static bool runningMarkedQueue;
 
+        // row 456 (27 Nov): what Prefix changed, so Finalizer undoes exactly that
+        public struct EndState
+        {
+            public bool prevRunning;
+            public bool pushedRand;
+            public bool pushedFaction;
+        }
+
         // row 453 (25 Nov, Fable review): save/restore instead of set/clear, so a nested call cannot clear the outer flag; main thread,
         // currentEvent == null (the queue really runs now) and not an Mp/Saving event; lab switch -mplaboff=453 restores the old behaviour.
-        static void Prefix(out bool __state)
+        static void Prefix(out EndState __state)
         {
-            __state = runningMarkedQueue;
+            __state = default;
+            __state.prevRunning = runningMarkedQueue;
             if (Multiplayer.Client != null && NewLongEvent.currentEventWasMarked && UnityData.IsInMainThread
                 && LongEventHandler.currentEvent == null && !NewLongEvent.keyIsMpOrSaving && !LabOff.Row(453))
+            {
                 runningMarkedQueue = true;
+
+                // row 456 (27 Nov): outermost drain only; seed and faction recorded when the event was queued (LongEventQueueInfo)
+                if (!__state.prevRunning && !LabOff.Row(456)
+                    && NewLongEvent.currentQueued != null && LongEventQueueInfo.table.TryGetValue(NewLongEvent.currentQueued, out var info))
+                {
+                    if (info.seed is { } seed)
+                    {
+                        Rand.PushState(seed);
+                        __state.pushedRand = true;
+                    }
+
+                    if (info.faction != null && Multiplayer.game != null && Multiplayer.GameComp.multifaction)
+                    {
+                        FactionExtensions.PushFaction(null, info.faction, force: true);
+                        __state.pushedFaction = true;
+                        foreach (var map in Find.Maps)
+                            map.MpComp().SetFaction(info.faction);
+                    }
+                }
+            }
         }
 
         // row 453 (25 Nov, Fable review): void finalizer restores the outer value even if a queued action throws, and does not swallow the exception.
-        static void Finalizer(bool __state)
+        // row 456: also pops the faction and seed pushed by Prefix (faction first, like AsyncWorldTimeComp.PostContext, then Rand).
+        static void Finalizer(EndState __state)
         {
-            runningMarkedQueue = __state;
+            runningMarkedQueue = __state.prevRunning;
+
+            if (__state.pushedFaction)
+            {
+                var f = FactionExtensions.PopFaction();
+                if (f != null)
+                    foreach (var map in Find.Maps)
+                        map.MpComp().SetFaction(f);
+            }
+
+            if (__state.pushedRand)
+                Rand.PopState();
         }
 
         static void Postfix()
@@ -158,6 +207,40 @@ namespace Multiplayer.Client.Patches
 
             if (callback != null)
                 callback();
+        }
+    }
+
+    // row 456 (27 Nov): per queued long event, the seed (derived from the draw SeedLongEvents already makes, so the tick's Rand sequence
+    // does not shift) and the faction in force when the event was queued. Read by LongEventEnd for the event's ExecuteWhenFinished queue.
+    [HarmonyPatch(typeof(LongEventHandler), nameof(LongEventHandler.QueueLongEvent),
+        typeof(Action), typeof(string), typeof(bool), typeof(Action<Exception>), typeof(bool), typeof(bool), typeof(Action))]
+    static class LongEventQueueInfo
+    {
+        public class Info
+        {
+            public int? seed;
+            public Faction faction;
+        }
+
+        public static readonly ConditionalWeakTable<LongEventHandler.QueuedLongEvent, Info> table = new();
+
+        static readonly AccessTools.FieldRef<Queue<LongEventHandler.QueuedLongEvent>> EventQueue =
+            AccessTools.StaticFieldRefAccess<Queue<LongEventHandler.QueuedLongEvent>>(AccessTools.Field(typeof(LongEventHandler), "eventQueue"));
+
+        static void Postfix()
+        {
+            var drawn = SeedLongEvents.lastDrawnSeed;
+            SeedLongEvents.lastDrawnSeed = null;
+            if (drawn == null || Multiplayer.Client == null) return;
+
+            var queue = EventQueue();
+            if (queue.Count == 0) return;
+
+            table.Add(queue.Last(), new Info
+            {
+                seed = Gen.HashCombineInt(drawn.Value, 456),
+                faction = Multiplayer.game != null ? Find.FactionManager.OfPlayer : null
+            });
         }
     }
 }
