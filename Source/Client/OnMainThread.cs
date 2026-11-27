@@ -34,6 +34,7 @@ namespace Multiplayer.Client
             Patches.InterfaceSkipPostfixGuard.Update();   // C13: rescan after later Harmony patches (FIXES row 114)
             Multiplayer.session.Update();
             SyncFieldUtil.UpdateSync();
+            SettingsCheck.Update();   // FIXES row 512
 
             if (PerformanceRecorder.IsRecording)
             {

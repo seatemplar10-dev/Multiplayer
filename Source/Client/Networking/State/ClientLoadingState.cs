@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Linq;
 using Ionic.Zlib;
 using Multiplayer.Client.Saving;
+using Multiplayer.Client.Util;
 using Multiplayer.Common;
 using Verse;
 
@@ -145,5 +146,6 @@ public class ClientLoadingState(ConnectionBase connection) : ClientBaseState(con
         var loadingMs = watch.ElapsedMilliseconds;
         Log.Message($"Loaded game in {loadingMs}ms");
         connection.ChangeState(ConnectionStateEnum.ClientPlaying);
+        SettingsCheck.OnJoined();   // FIXES row 512
     }
 }
