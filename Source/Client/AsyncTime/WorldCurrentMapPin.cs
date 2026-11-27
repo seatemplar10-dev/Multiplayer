@@ -526,14 +526,19 @@ static class WorldCurrentMapPinLongEventPatch
             // Autosaving.DoAutosave queues its long event as "MpSaving" (Autosaving.QueueHostSave), skipped by the Mp filter above.
             __state.realBefore = Multiplayer.RealPlayerFaction;
             var target = info.faction;
+            Faction pushedF = null;
             PinRule.PushThenApply(ref __state.pushedFaction,
-                () => FactionContext.Push(target, force: true),
+                () => pushedF = FactionContext.Push(target, force: true),
                 () =>
                 {
                     WorldCurrentMapPin.longEventBodyFactionPushed = true;
-                    Multiplayer.WorldComp?.SetFaction(target);
+                    // orchestrator review: Push pushes a null frame and returns null for a non-player faction; then apply nothing,
+                    // like FactionExtensions.PushFaction (the Finalizer's pop of that null frame restores nothing either)
+                    if (pushedF == null)
+                        return;
+                    Multiplayer.WorldComp?.SetFaction(pushedF);
                     foreach (var map in Find.Maps)
-                        map.MpComp().SetFaction(target);
+                        map.MpComp().SetFaction(pushedF);
                 });
         }
     }
