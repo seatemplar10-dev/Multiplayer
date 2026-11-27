@@ -116,11 +116,12 @@ namespace Multiplayer.Client.Patches
                 if (!__state.prevRunning && !LabOff.Row(456)
                     && NewLongEvent.currentQueued != null && LongEventQueueInfo.table.TryGetValue(NewLongEvent.currentQueued, out var info))
                 {
-                    // row 456 1b-4 (review finding 4): the entry is consumed by the first outermost drain. A later drain of the same
-                    // event (a callback or a second ExecuteToExecuteWhenFinished) finds nothing, so it is not re-seeded with this seed and
-                    // continues the ambient stream (the callback has its own callbackSeed from SeedLongEvents).
-                    LongEventQueueInfo.table.Remove(NewLongEvent.currentQueued);
-                    if (info.seed is { } seed)
+                    // row 456 1b-4 (review finding 4, stage 1b review): the seed is consumed by the first outermost drain. A later drain
+                    // of the same event (a callback or a second ExecuteToExecuteWhenFinished) is not re-seeded with this seed and continues
+                    // the ambient stream (the callback has its own callbackSeed from SeedLongEvents), but it keeps the queued faction.
+                    var queuedSeed = info.seed;
+                    info.seed = null;
+                    if (queuedSeed is { } seed)
                     {
                         Rand.PushState(seed);
                         __state.pushedRand = true;
@@ -237,9 +238,10 @@ namespace Multiplayer.Client.Patches
         static readonly AccessTools.FieldRef<Queue<LongEventHandler.QueuedLongEvent>> EventQueue =
             AccessTools.StaticFieldRefAccess<Queue<LongEventHandler.QueuedLongEvent>>(AccessTools.Field(typeof(LongEventHandler), "eventQueue"));
 
-        // row 456 1b-2 (review finding 2): the faction in force right now. FactionContext.Push/Set (used by CaravanFactionScope, the
-        // map tick and the command executor) writes FactionManager.ofPlayer, so that field is the top of the context stack, also under
-        // CaravanFactionScope(gravship.Faction) inside a world tick. Read the field, not a fallback to the spectator.
+        // row 456 1b-2 (review finding 2): the faction in force right now. FactionContext.Push/Set (used by the map tick, the command
+        // executor and WorldObjectMethodPatches, which sets the gravship's faction around Gravship.TickInterval where the landing event is
+        // queued) writes FactionManager.ofPlayer, so that field is the top of the context stack. CaravanFactionScope acts only inside the
+        // event action (the ArriveNewMap prefix), not at queue time. Read the field, not a fallback to the spectator.
         static Faction ActiveFaction()
         {
             if (Multiplayer.game == null) return null;
