@@ -141,7 +141,7 @@ namespace Multiplayer.Client
                             Log.Warning("[LabOff] -" + Arg + "=" + value + " ignored: " + GateType + " is not loaded");
                         else
                         {
-                            var flags = new bool[512];
+                            var flags = new bool[1000];
                             var any = false;
                             foreach (var p in value.Split(','))
                             {
