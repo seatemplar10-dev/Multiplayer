@@ -263,6 +263,15 @@ namespace Multiplayer.Client.Patches
                 seed = Gen.HashCombineInt(drawn.Value, 456),
                 faction = ActiveFaction()
             });
+
+            // row 456 field check: one Player.log line per process, the first time a queued long event gets its seed and faction
+            if (!loggedRow456)
+            {
+                loggedRow456 = true;
+                Log.Message("[Multiplayer] row 456: queued long event seeded with its faction context");
+            }
         }
+
+        static bool loggedRow456;
     }
 }
