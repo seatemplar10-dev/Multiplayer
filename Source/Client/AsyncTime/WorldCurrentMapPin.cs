@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
+using Multiplayer.Client.Factions;
 using Multiplayer.Client.Patches;
 using RimWorld;
 using RimWorld.Planet;
@@ -30,6 +31,8 @@ public static class WorldCurrentMapPin
     private static readonly List<Map> outerPins = new();
     // Whether the innermost level is a map context's own pin (PinMap), and the same for the enclosing levels
     private static bool mapLevel;
+    // row 548: true while a tick-marked long event body runs under its queued faction (outermost only)
+    internal static bool longEventBodyFactionPushed;
     private static readonly List<bool> outerMapLevels = new();
     private static int viewScope;
     // The simulation removed the map this client was viewing; the view switches once the context is over (FlushViewSwitch)
@@ -490,8 +493,16 @@ static class WorldCurrentMapPinCameraSelectPatch
 [HarmonyPatch(typeof(LongEventHandler), nameof(LongEventHandler.UpdateCurrentSynchronousEvent))]
 static class WorldCurrentMapPinLongEventPatch
 {
-    static void Prefix(ref bool __state)
+    // row 548 (27 Nov): what Prefix changed, so Finalizer undoes exactly that
+    public struct PinState
     {
+        public bool pinned;
+        public bool pushedFaction;
+    }
+
+    static void Prefix(out PinState __state)
+    {
+        __state = default;
         var ev = LongEventHandler.currentEvent;
         if (Multiplayer.Client == null || ev?.eventAction == null || ev.ShouldWaitUntilDisplayed) return;
         if (!MarkLongEvents.IsTickMarked(ev.eventAction)) return;
@@ -500,13 +511,41 @@ static class WorldCurrentMapPinLongEventPatch
         if (key != null && (key.StartsWith("Mp", StringComparison.Ordinal) || key == "Saving")) return;
 
         WorldCurrentMapPin.Pin();
-        __state = true;
+        __state.pinned = true;
+
+        // row 548 (27 Nov): the body ran under each PC's own ofPlayer (68 on one PC, 70 on the other). Run it under the faction
+        // recorded when the event was queued (row 456), the same shape as LongEventEnd. Outermost only: a nested faction stays.
+        if (!LabOff.Row(548) && !WorldCurrentMapPin.longEventBodyFactionPushed && Multiplayer.game != null && Multiplayer.GameComp.multifaction
+            && LongEventQueueInfo.table.TryGetValue(ev, out var info) && info.faction != null)
+        {
+            FactionExtensions.PushFaction(null, info.faction, force: true);
+            WorldCurrentMapPin.longEventBodyFactionPushed = true;
+            __state.pushedFaction = true;
+            foreach (var map in Find.Maps)
+                map.MpComp().SetFaction(info.faction);
+        }
     }
 
-    static void Finalizer(bool __state)
+    static void Finalizer(PinState __state)
     {
-        if (!__state) return;
-        WorldCurrentMapPin.Unpin();
-        WorldCurrentMapPin.FlushViewSwitch();
+        try
+        {
+            if (__state.pushedFaction)
+            {
+                WorldCurrentMapPin.longEventBodyFactionPushed = false;
+                var f = FactionExtensions.PopFaction();
+                if (f != null)
+                    foreach (var map in Find.Maps)
+                        map.MpComp().SetFaction(f);
+            }
+        }
+        finally
+        {
+            if (__state.pinned)
+            {
+                WorldCurrentMapPin.Unpin();
+                WorldCurrentMapPin.FlushViewSwitch();
+            }
+        }
     }
 }
