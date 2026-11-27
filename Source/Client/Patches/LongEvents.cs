@@ -252,7 +252,7 @@ namespace Multiplayer.Client.Patches
             var queue = EventQueue();
             if (queue.Count == 0) return;
 
-            table.Add(queue.Last(), new Info
+            table.AddOrUpdate(queue.Last(), new Info
             {
                 seed = Gen.HashCombineInt(drawn.Value, 456),
                 faction = ActiveFaction()
