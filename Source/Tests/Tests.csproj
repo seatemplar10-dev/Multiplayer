@@ -27,6 +27,7 @@
       <Compile Include="../Client/Desyncs/DesyncReportWriter.cs" Link="DesyncReportWriter.cs" />
       <Compile Include="../Client/Util/SettingsStoreHash.cs" Link="SettingsStoreHash.cs" />
       <Compile Include="../Client/Util/LocalIdRule.cs" Link="LocalIdRule.cs" />
+      <Compile Include="../Client/AsyncTime/PinRule.cs" Link="PinRule.cs" />
     </ItemGroup>
 
     <ItemGroup>

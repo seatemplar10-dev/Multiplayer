@@ -4,6 +4,7 @@ using System.Reflection;
 using HarmonyLib;
 using Multiplayer.Client.Factions;
 using Multiplayer.Client.Patches;
+using Multiplayer.Client.Util;
 using RimWorld;
 using RimWorld.Planet;
 using Verse;
@@ -175,6 +176,7 @@ public static class WorldCurrentMapPin
         while (depth > 0)
             restored |= UnpinCore();
         viewScope = 0;
+        longEventBodyFactionPushed = false;
         FlushViewSwitch();
         if (restored)
             NoteViewAfterRestore(g, "ForceReset");
@@ -241,6 +243,7 @@ public static class WorldCurrentMapPin
     internal static void Clear()
     {
         depth = 0;
+        longEventBodyFactionPushed = false;
         game = null;
         viewedMap = null;
         pinnedMap = null;
@@ -498,6 +501,7 @@ static class WorldCurrentMapPinLongEventPatch
     {
         public bool pinned;
         public bool pushedFaction;
+        public Faction realBefore;   // Multiplayer.RealPlayerFaction before the body
     }
 
     static void Prefix(out PinState __state)
@@ -515,14 +519,22 @@ static class WorldCurrentMapPinLongEventPatch
 
         // row 548 (27 Nov): the body ran under each PC's own ofPlayer (68 on one PC, 70 on the other). Run it under the faction
         // recorded when the event was queued (row 456), the same shape as LongEventEnd. Outermost only: a nested faction stays.
-        if (!LabOff.Row(548) && !WorldCurrentMapPin.longEventBodyFactionPushed && Multiplayer.game != null && Multiplayer.GameComp.multifaction
-            && LongEventQueueInfo.table.TryGetValue(ev, out var info) && info.faction != null)
+        // LabOff.Row(548) is last so its HIT line only shows when the fix would really act.
+        if (!WorldCurrentMapPin.longEventBodyFactionPushed && Multiplayer.game != null && Multiplayer.GameComp.multifaction
+            && LongEventQueueInfo.table.TryGetValue(ev, out var info) && info.faction != null && !LabOff.Row(548))
         {
-            FactionExtensions.PushFaction(null, info.faction, force: true);
-            WorldCurrentMapPin.longEventBodyFactionPushed = true;
-            __state.pushedFaction = true;
-            foreach (var map in Find.Maps)
-                map.MpComp().SetFaction(info.faction);
+            // Autosaving.DoAutosave queues its long event as "MpSaving" (Autosaving.QueueHostSave), skipped by the Mp filter above.
+            __state.realBefore = Multiplayer.RealPlayerFaction;
+            var target = info.faction;
+            PinRule.PushThenApply(ref __state.pushedFaction,
+                () => FactionContext.Push(target, force: true),
+                () =>
+                {
+                    WorldCurrentMapPin.longEventBodyFactionPushed = true;
+                    Multiplayer.WorldComp?.SetFaction(target);
+                    foreach (var map in Find.Maps)
+                        map.MpComp().SetFaction(target);
+                });
         }
     }
 
@@ -533,11 +545,28 @@ static class WorldCurrentMapPinLongEventPatch
             if (__state.pushedFaction)
             {
                 WorldCurrentMapPin.longEventBodyFactionPushed = false;
-                var f = FactionExtensions.PopFaction();
-                if (f != null)
-                    foreach (var map in Find.Maps)
-                        map.MpComp().SetFaction(f);
+                // never throws: the exception handler may have run StopMultiplayer (game null, stack cleared) before this
+                if (PinRule.CanPop(Multiplayer.game != null, FactionContext.stack.Count, Current.Game != null && Find.Maps != null))
+                {
+                    var f = FactionExtensions.PopFaction();
+                    // the body may have called ChangeRealPlayerFaction (FactionCreator): then that faction wins over the old one
+                    var target = PinRule.RestoreTarget(f, __state.realBefore, Multiplayer.RealPlayerFaction);
+                    if (target != null)
+                    {
+                        if (target != f)
+                        {
+                            FactionContext.Set(target);
+                            Multiplayer.WorldComp?.SetFaction(target);
+                        }
+                        foreach (var map in Find.Maps)
+                            map.MpComp().SetFaction(target);
+                    }
+                }
             }
+        }
+        catch (Exception e)
+        {
+            Log.Error($"[row 548] Finalizer: {e}");
         }
         finally
         {
