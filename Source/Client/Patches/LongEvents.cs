@@ -139,16 +139,22 @@ namespace Multiplayer.Client.Patches
         {
             runningMarkedQueue = __state.prevRunning;
 
-            if (__state.pushedFaction)
+            // row 456 1b-3 (review finding 3): the Rand pop runs even if the faction pop throws
+            try
             {
-                var f = FactionExtensions.PopFaction();
-                if (f != null)
-                    foreach (var map in Find.Maps)
-                        map.MpComp().SetFaction(f);
+                if (__state.pushedFaction)
+                {
+                    var f = FactionExtensions.PopFaction();
+                    if (f != null)
+                        foreach (var map in Find.Maps)
+                            map.MpComp().SetFaction(f);
+                }
             }
-
-            if (__state.pushedRand)
-                Rand.PopState();
+            finally
+            {
+                if (__state.pushedRand)
+                    Rand.PopState();
+            }
         }
 
         static void Postfix()
