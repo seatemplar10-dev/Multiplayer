@@ -116,6 +116,10 @@ namespace Multiplayer.Client.Patches
                 if (!__state.prevRunning && !LabOff.Row(456)
                     && NewLongEvent.currentQueued != null && LongEventQueueInfo.table.TryGetValue(NewLongEvent.currentQueued, out var info))
                 {
+                    // row 456 1b-4 (review finding 4): the entry is consumed by the first outermost drain. A later drain of the same
+                    // event (a callback or a second ExecuteToExecuteWhenFinished) finds nothing, so it is not re-seeded with this seed and
+                    // continues the ambient stream (the callback has its own callbackSeed from SeedLongEvents).
+                    LongEventQueueInfo.table.Remove(NewLongEvent.currentQueued);
                     if (info.seed is { } seed)
                     {
                         Rand.PushState(seed);
