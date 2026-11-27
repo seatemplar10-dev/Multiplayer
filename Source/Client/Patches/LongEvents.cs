@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using Multiplayer.Client.Factions;
+using Multiplayer.Client.Util;
 using RimWorld;
 using HarmonyLib;
 using Multiplayer.Common;
@@ -178,9 +179,9 @@ namespace Multiplayer.Client.Patches
             {
                 doAsynchronously = false;
 
-                // Callback is only called in asynchronous long events and will be skipped in
-                // a synchronous ones. Make sure they are called after the actual action.
-                if (callback != null)
+                // Row 549: vanilla 1.7 UpdateCurrentSynchronousEvent runs callback?.Invoke() itself (LongEventHandler.cs:425-430),
+                // so appending it here ran it twice. Only the old behaviour (LabOff row 549 on) still appends.
+                if (PinRule.AppendCallback(callback != null, !LabOff.Row(549)))
                     action += callback;
             }
         }
