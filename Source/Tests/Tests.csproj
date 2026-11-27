@@ -28,6 +28,7 @@
       <Compile Include="../Client/Util/SettingsStoreHash.cs" Link="SettingsStoreHash.cs" />
       <Compile Include="../Client/Util/LocalIdRule.cs" Link="LocalIdRule.cs" />
       <Compile Include="../Client/AsyncTime/PinRule.cs" Link="PinRule.cs" />
+      <Compile Include="../Client/Util/InvokerRule.cs" Link="InvokerRule.cs" />
     </ItemGroup>
 
     <ItemGroup>

@@ -48,7 +48,10 @@ namespace Multiplayer.Client
             this.targetType = targetType;
             this.instancePath = instancePath;
 
-            methodDelegate = HarmonyLib.MethodInvoker.GetHandler(method);
+            // row 556 (28 Nov): 10+ parameters made GetHandler throw, so the method never registered; -mplaboff=556 = old behaviour
+            methodDelegate = InvokerRule.Make(method, () => !LabOff.Row(556), out var reflectionInvoker);
+            if (reflectionInvoker)
+                Log.Message($"[Multiplayer] row 556: sync method {method.DeclaringType?.FullName}.{method.Name} ({method.GetParameters().Length} params) uses the reflection invoker");
             argTypes = CheckArgs(method, inTypes);
             argNames = method.GetParameters().Names();
             argTransformers = new SyncTransformer[argTypes.Length];
