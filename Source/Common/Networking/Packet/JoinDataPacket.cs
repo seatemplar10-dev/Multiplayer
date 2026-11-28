@@ -27,8 +27,8 @@ public record struct ServerJoinDataPacket : IPacket
         buf.Bind(ref mpVersion);
         buf.Bind(ref defStatus, BinderOf.Enum<DefCheckStatus>());
         buf.Bind(ref configsIncluded);
-        // Max 512KiB. Should be way more than enough. As an example, one game with ~100 mods used ~35KiB.
-        buf.BindRemaining(ref rawServerInitData, maxLength: 1<<19);
+        // Max 8 MiB (was 512 KiB). A ~1,800 mod list is ~0.5 MiB compressed. As an example, one game with ~100 mods used ~35KiB.
+        buf.BindRemaining(ref rawServerInitData, maxLength: ClientInitDataPacket.MaxRawDataLength);
     }
 }
 

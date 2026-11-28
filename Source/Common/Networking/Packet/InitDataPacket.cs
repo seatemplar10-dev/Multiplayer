@@ -16,8 +16,9 @@ public record struct ServerInitDataRequestPacket(bool includeConfigs) : IPacket
 [PacketDefinition(Packets.Client_InitData, allowFragmented: true)]
 public record struct ClientInitDataPacket : IPacket
 {
-    // 1 MiB limit — large mod lists can exceed the default 32 KiB BindRemaining limit
-    private const int MaxRawDataLength = 1 << 20;
+    // 8 MiB limit (compressed mod data) — large mod lists can exceed the default 32 KiB BindRemaining limit.
+    // Shared with ServerJoinDataPacket.rawServerInitData, which carries the same blob.
+    public const int MaxRawDataLength = 1 << 23;
 
     public string rwVersion;
     public int[] debugOnlySyncCmds;
@@ -43,7 +44,7 @@ public record struct ClientInitDataPacket : IPacket
         buf.BindEnum(ref staticCtorRoundMode);
         buf.Bind(ref defInfos, BinderOf.Identity<KeyedDefInfo>());
         buf.Bind(ref includeConfigs);
-        buf.BindRemaining(ref rawMods);
+        buf.BindRemaining(ref rawMods, maxLength: MaxRawDataLength);
     }
 
     // Based on ContentSource but a byte, so smaller on the network and also doesn't use Verse
